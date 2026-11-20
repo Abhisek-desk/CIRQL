@@ -11,6 +11,9 @@ import authRoutes from "./routes/authRoutes.js";
 import notFoundMiddleware from "./middleware/notFoundMiddleware.js";
 import errorMiddleware from "./middleware/errorMiddleware.js";
 
+import workspaceRoutes from "./routes/workspaceRoutes.js";
+import channelRoutes from "./routes/channelRoutes.js";
+
 const app = express();
 
 // Security
@@ -51,11 +54,12 @@ app.get("/", (req, res) => {
   });
 });
 
-// Routes
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 
-// Error handling
+app.use("/api/workspaces", workspaceRoutes);
+app.use("/api/channels", channelRoutes);
+
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
