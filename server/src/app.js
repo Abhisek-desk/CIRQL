@@ -9,6 +9,8 @@ import healthRoutes from "./routes/healthRoutes.js";
 import notFoundMiddleware from "./middleware/notFoundMiddleware.js";
 import errorMiddleware from "./middleware/errorMiddleware.js";
 
+import authRoutes from "./routes/authRoutes.js";
+
 const app = express();
 
 app.use(helmet());
@@ -46,6 +48,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/health", healthRoutes);
 
+app.use("/api/auth", authRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
