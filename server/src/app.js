@@ -6,13 +6,14 @@ import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 
 import healthRoutes from "./routes/healthRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+
 import notFoundMiddleware from "./middleware/notFoundMiddleware.js";
 import errorMiddleware from "./middleware/errorMiddleware.js";
 
-import authRoutes from "./routes/authRoutes.js";
-
 const app = express();
 
+// Security
 app.use(helmet());
 
 app.use(
@@ -22,14 +23,17 @@ app.use(
   })
 );
 
+// Body parsers
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Logging
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
 
+// Rate limiting
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 200,
@@ -39,6 +43,7 @@ const apiLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
+// Root
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -46,9 +51,11 @@ app.get("/", (req, res) => {
   });
 });
 
+// Routes
 app.use("/api/health", healthRoutes);
-
 app.use("/api/auth", authRoutes);
+
+// Error handling
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
