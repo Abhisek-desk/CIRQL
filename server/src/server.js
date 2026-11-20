@@ -5,21 +5,24 @@ import http from "http";
 import app from "./app.js";
 import connectDB from "./config/db.js";
 import { connectRedis } from "./config/redis.js";
+import { initializeSocketServer } from "./sockets/socket.js";
 
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
     await connectDB();
-
     await connectRedis();
 
     const server = http.createServer(app);
+
+    initializeSocketServer(server);
 
     server.listen(PORT, () => {
       console.log(`CIRQL server running on port ${PORT}`);
       console.log(`API: http://localhost:${PORT}`);
       console.log(`Health: http://localhost:${PORT}/api/health`);
+      console.log("Socket.IO initialized successfully");
     });
   } catch (error) {
     console.error("Server startup failed:", error);

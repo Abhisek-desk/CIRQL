@@ -14,6 +14,8 @@ import errorMiddleware from "./middleware/errorMiddleware.js";
 import workspaceRoutes from "./routes/workspaceRoutes.js";
 import channelRoutes from "./routes/channelRoutes.js";
 
+import messageRoutes from "./routes/messageRoutes.js";
+
 const app = express();
 
 // Security
@@ -59,6 +61,7 @@ app.use("/api/auth", authRoutes);
 
 app.use("/api/workspaces", workspaceRoutes);
 app.use("/api/channels", channelRoutes);
+app.use("/api/messages", messageRoutes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
