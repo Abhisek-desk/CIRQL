@@ -21,29 +21,29 @@
   --success: #10b981;
   --danger: #ef4444;
 
-  --shadow: 0 10px 35px rgba(0, 0, 0, 0.25);
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
 }
 
 [data-theme="light"] {
   color-scheme: light;
 
-  --bg: #ffffff;
-  --sidebar: #f8fafc;
-  --surface: #f1f5f9;
-  --surface-hover: #e2e8f0;
-  --border: #e2e8f0;
+  --bg: #f5f6fc;
+  --sidebar: #ffffff;
+  --surface: #ffffff;
+  --surface-hover: #f0efff;
+  --border: #e8e8f1;
 
-  --text: #0f172a;
-  --muted: #64748b;
+  --text: #20213a;
+  --muted: #777b95;
 
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
+  --primary: #635bdb;
+  --primary-hover: #5148c7;
   --accent: #8b5cf6;
 
   --success: #059669;
   --danger: #dc2626;
 
-  --shadow: 0 10px 35px rgba(15, 23, 42, 0.08);
+  --shadow: 0 8px 30px rgba(45, 45, 90, 0.07);
 }
 
 * {
@@ -94,6 +94,15 @@ button {
   border-radius: 10px;
 }
 
+[data-theme="light"] .light-card {
+  box-shadow: var(--shadow);
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] textarea:focus {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -103,3 +112,5 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
