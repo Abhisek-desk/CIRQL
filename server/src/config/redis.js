@@ -1,33 +1,39 @@
 import Redis from "ioredis";
 
-let redis;
+let redis = null;
 
 export const connectRedis = async () => {
   if (!process.env.REDIS_URL) {
-    console.log("Redis URL not configured. Skipping Redis.");
+    console.log("Redis not configured. Skipping Redis.");
     return null;
   }
 
-  redis = new Redis(process.env.REDIS_URL, {
+  const client = new Redis(process.env.REDIS_URL, {
     lazyConnect: true,
     maxRetriesPerRequest: null,
+    connectTimeout: 5000,
+    retryStrategy: () => null,
   });
 
-  redis.on("connect", () => {
-    console.log("Redis connected successfully");
-  });
-
-  redis.on("error", (error) => {
+  client.on("error", (error) => {
     console.error("Redis error:", error.message);
   });
 
   try {
-    await redis.connect();
+    await client.connect();
+
+    redis = client;
+
+    console.log("Redis connected successfully");
+
     return redis;
   } catch (error) {
-    console.error("Redis connection failed:", error.message);
-    redis.disconnect();
+    console.log("Redis unavailable. Continuing without Redis.");
+
+    client.disconnect();
+
     redis = null;
+
     return null;
   }
 };

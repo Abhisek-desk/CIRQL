@@ -1,7 +1,6 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import Message from "../models/Message.js";
 
 import { createMessage } from "../services/messageService.js";
 import { getAccessibleChannel } from "../services/channelAccess.js";
@@ -31,7 +30,10 @@ export const initializeSocketServer = (httpServer) => {
         return next(new Error("Authentication required"));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_ACCESS_SECRET
+      );
 
       const user = await User.findById(decoded.sub);
 
@@ -47,13 +49,27 @@ export const initializeSocketServer = (httpServer) => {
     }
   });
 
+  // CONNECTION
   io.on("connection", (socket) => {
+    const userId = socket.user._id.toString();
+
     console.log(`User connected: ${socket.user.name}`);
+
+    // ONLINE PRESENCE
+    addOnlineUser(userId, socket.id);
+
+    io.emit("presence:online", {
+      userId,
+      onlineUsers: getOnlineUsers(),
+    });
 
     // JOIN CHANNEL
     socket.on("channel:join", async (channelId, callback) => {
       try {
-        const access = await getAccessibleChannel(channelId, socket.user._id);
+        const access = await getAccessibleChannel(
+          channelId,
+          socket.user._id
+        );
 
         if (!access) {
           return callback?.({
@@ -62,9 +78,7 @@ export const initializeSocketServer = (httpServer) => {
           });
         }
 
-        const room = `channel:${channelId}`;
-
-        socket.join(room);
+        socket.join(`channel:${channelId}`);
 
         callback?.({
           success: true,
@@ -95,7 +109,10 @@ export const initializeSocketServer = (httpServer) => {
           replyTo,
         });
 
-        io.to(`channel:${channelId}`).emit("message:new", message);
+        io.to(`channel:${channelId}`).emit(
+          "message:new",
+          message
+        );
 
         callback?.({
           success: true,
@@ -111,31 +128,55 @@ export const initializeSocketServer = (httpServer) => {
 
     // TYPING START
     socket.on("typing:start", async (channelId) => {
-      const access = await getAccessibleChannel(channelId, socket.user._id);
+      try {
+        const access = await getAccessibleChannel(
+          channelId,
+          socket.user._id
+        );
 
-      if (!access) return;
+        if (!access) return;
 
-      socket.to(`channel:${channelId}`).emit("typing:start", {
-        userId: socket.user._id,
-        name: socket.user.name,
-        channelId,
-      });
+        socket.to(`channel:${channelId}`).emit(
+          "typing:start",
+          {
+            userId,
+            name: socket.user.name,
+            channelId,
+          }
+        );
+      } catch (error) {
+        console.error("Typing start error:", error.message);
+      }
     });
 
     // TYPING STOP
     socket.on("typing:stop", async (channelId) => {
-      const access = await getAccessibleChannel(channelId, socket.user._id);
+      try {
+        const access = await getAccessibleChannel(
+          channelId,
+          socket.user._id
+        );
 
-      if (!access) return;
+        if (!access) return;
 
-      socket.to(`channel:${channelId}`).emit("typing:stop", {
-        userId: socket.user._id,
-        channelId,
-      });
+        socket.to(`channel:${channelId}`).emit(
+          "typing:stop",
+          {
+            userId,
+            channelId,
+          }
+        );
+      } catch (error) {
+        console.error("Typing stop error:", error.message);
+      }
     });
 
+    // DISCONNECT
     socket.on("disconnect", () => {
-      const wentOffline = removeOnlineUser(userId, socket.id);
+      const wentOffline = removeOnlineUser(
+        userId,
+        socket.id
+      );
 
       if (wentOffline) {
         io.emit("presence:offline", {
@@ -146,15 +187,6 @@ export const initializeSocketServer = (httpServer) => {
 
       console.log(`User disconnected: ${socket.user.name}`);
     });
-  });
-
-  const userId = socket.user._id.toString();
-
-  addOnlineUser(userId, socket.id);
-
-  io.emit("presence:online", {
-    userId,
-    onlineUsers: getOnlineUsers(),
   });
 
   return io;
