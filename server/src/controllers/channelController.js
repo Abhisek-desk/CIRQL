@@ -1,13 +1,10 @@
 import Channel from "../models/Channel.js";
+import mongoose from "mongoose";
 
 // CREATE CHANNEL
 export const createChannel = async (req, res, next) => {
   try {
-    const {
-      name,
-      description = "",
-      type = "public",
-    } = req.body;
+    const { name, description = "", type = "public" } = req.body;
 
     if (!name || name.trim().length < 2) {
       return res.status(400).json({
@@ -25,8 +22,7 @@ export const createChannel = async (req, res, next) => {
 
     if (
       req.workspace.members.some(
-        (member) =>
-          member.userId.toString() === req.user._id.toString()
+        (member) => member.userId.toString() === req.user._id.toString(),
       ) === false
     ) {
       return res.status(403).json({
@@ -67,18 +63,11 @@ export const createChannel = async (req, res, next) => {
 };
 
 // GET CHANNELS IN WORKSPACE
-export const getWorkspaceChannels = async (
-  req,
-  res,
-  next
-) => {
+export const getWorkspaceChannels = async (req, res, next) => {
   try {
     const channels = await Channel.find({
       workspace: req.workspace._id,
-      $or: [
-        { type: "public" },
-        { members: req.user._id },
-      ],
+      $or: [{ type: "public" }, { members: req.user._id }],
     })
       .populate("createdBy", "name email avatar")
       .sort({ createdAt: 1 });
@@ -111,8 +100,7 @@ export const getChannel = async (req, res, next) => {
     if (
       channel.type === "private" &&
       !channel.members.some(
-        (memberId) =>
-          memberId.toString() === req.user._id.toString()
+        (memberId) => memberId.toString() === req.user._id.toString(),
       )
     ) {
       return res.status(403).json({
@@ -145,12 +133,9 @@ export const deleteChannel = async (req, res, next) => {
       });
     }
 
-    const isCreator =
-      channel.createdBy.toString() === req.user._id.toString();
+    const isCreator = channel.createdBy.toString() === req.user._id.toString();
 
-    const isAdmin = ["owner", "admin"].includes(
-      req.membership.role
-    );
+    const isAdmin = ["owner", "admin"].includes(req.membership.role);
 
     if (!isCreator && !isAdmin) {
       return res.status(403).json({
@@ -164,6 +149,66 @@ export const deleteChannel = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Channel deleted successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addPrivateChannelMember = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const { userId } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const channel = await Channel.findOne({
+      _id: channelId,
+      workspace: req.workspace._id,
+      type: "private",
+    });
+
+    if (!channel) {
+      return res.status(404).json({
+        success: false,
+        message: "Private channel not found",
+      });
+    }
+
+    const Workspace = (await import("../models/Workspace.js")).default;
+
+    const workspace = await Workspace.findById(req.workspace._id);
+
+    const isWorkspaceMember = workspace.members.some(
+      (member) => member.userId.toString() === userId,
+    );
+
+    if (!isWorkspaceMember) {
+      return res.status(400).json({
+        success: false,
+        message: "User must belong to the workspace first",
+      });
+    }
+
+    if (channel.members.some((member) => member.toString() === userId)) {
+      return res.status(409).json({
+        success: false,
+        message: "User already belongs to this channel",
+      });
+    }
+
+    channel.members.push(userId);
+
+    await channel.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Member added to private channel",
     });
   } catch (error) {
     next(error);

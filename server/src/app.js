@@ -16,6 +16,8 @@ import channelRoutes from "./routes/channelRoutes.js";
 
 import messageRoutes from "./routes/messageRoutes.js";
 
+import reactionRoutes from "./routes/reactionRoutes.js";
+
 const app = express();
 
 // Security
@@ -62,6 +64,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/workspaces", workspaceRoutes);
 app.use("/api/channels", channelRoutes);
 app.use("/api/messages", messageRoutes);
+
+app.use("/api/reactions", reactionRoutes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
