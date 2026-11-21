@@ -17,6 +17,7 @@ import channelRoutes from "./routes/channelRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 
 import reactionRoutes from "./routes/reactionRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 const app = express();
 
@@ -66,6 +67,7 @@ app.use("/api/channels", channelRoutes);
 app.use("/api/messages", messageRoutes);
 
 app.use("/api/reactions", reactionRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

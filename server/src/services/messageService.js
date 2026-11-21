@@ -1,6 +1,9 @@
 import mongoose from "mongoose";
 import Message from "../models/Message.js";
 import { getAccessibleChannel } from "./channelAccess.js";
+import Workspace from "../models/Workspace.js";
+import Channel from "../models/Channel.js";
+import { createNotification } from "./notificationService.js";
 
 export const createMessage = async ({
   channelId,
@@ -8,8 +11,7 @@ export const createMessage = async ({
   content,
   replyTo = null,
 }) => {
-  const { channel } =
-    (await getAccessibleChannel(channelId, senderId)) || {};
+  const { channel } = (await getAccessibleChannel(channelId, senderId)) || {};
 
   if (!channel) {
     throw new Error("Channel not found or access denied");
@@ -46,7 +48,7 @@ export const createMessage = async ({
     replyTo,
   });
 
-  return Message.findById(message._id)
+  const populatedMessage = await Message.findById(message._id)
     .populate("sender", "name email avatar")
     .populate({
       path: "replyTo",
@@ -56,4 +58,30 @@ export const createMessage = async ({
         select: "name avatar",
       },
     });
+
+  const workspace = await Workspace.findById(channel.workspace);
+
+  const recipientIds =
+    channel.type === "private"
+      ? channel.members
+      : workspace.members.map((member) => member.userId);
+
+  const notificationType = replyTo ? "reply" : "new_message";
+
+  await Promise.all(
+    recipientIds
+      .filter((recipientId) => recipientId.toString() !== senderId.toString())
+      .map((recipientId) =>
+        createNotification({
+          recipient: recipientId,
+          sender: senderId,
+          type: notificationType,
+          message: message._id,
+          channel: channel._id,
+          content,
+        }),
+      ),
+  );
+
+  return populatedMessage;
 };
