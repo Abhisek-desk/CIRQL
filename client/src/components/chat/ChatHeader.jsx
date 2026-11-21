@@ -94,7 +94,7 @@ export default function ChatHeader({
           aria-label="Members"
           className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface)]"
         >
-          <Users size={19} />
+          <Users size={19} /> 
         </button>
 
         <ThemeToggle />
