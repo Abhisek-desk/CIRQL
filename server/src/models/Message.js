@@ -37,24 +37,28 @@ const messageSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    reactions: {
+      type: [
+        {
+          user: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            required: true,
+          },
+          emoji: {
+            type: String,
+            required: true,
+            enum: ["👍", "❤️", "😂", "🎉", "👀", "🚀"],
+          },
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
-    reactions: [
-      {
-        user: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        emoji: {
-          type: String,
-          required: true,
-          enum: ["👍", "❤️", "😂", "🎉", "👀", "🚀"],
-        },
-      },
-    ],
-  },
+  }
 );
 
 messageSchema.index({ channel: 1, _id: -1 });
