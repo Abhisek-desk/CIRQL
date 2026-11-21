@@ -18,6 +18,7 @@ import messageRoutes from "./routes/messageRoutes.js";
 
 import reactionRoutes from "./routes/reactionRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import uploadRoutes from "./routes/uploadRoutes.js";
 
 const app = express();
 
@@ -68,6 +69,7 @@ app.use("/api/messages", messageRoutes);
 
 app.use("/api/reactions", reactionRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/upload", uploadRoutes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
