@@ -1,13 +1,12 @@
 ﻿import { useState } from "react";
 import { motion } from "motion/react";
-import {
-  Paperclip,
-  Smile,
-  Send,
-  Plus,
-} from "lucide-react";
+import { Paperclip, Smile, Send, Plus } from "lucide-react";
 
-export default function MessageComposer({ onSend }) {
+export default function MessageComposer({
+  onSend,
+  onTypingChange,
+  channelName = "channel",
+}) {
   const [message, setMessage] = useState("");
 
   const handleSubmit = (event) => {
@@ -17,8 +16,16 @@ export default function MessageComposer({ onSend }) {
 
     if (!content) return;
 
+    onTypingChange?.(false);
     onSend?.(content);
     setMessage("");
+  };
+
+  const handleChange = (event) => {
+    const value = event.target.value;
+
+    setMessage(value);
+    onTypingChange?.(Boolean(value.trim()));
   };
 
   return (
@@ -28,8 +35,6 @@ export default function MessageComposer({ onSend }) {
     >
       <div className="mx-auto max-w-4xl">
         <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm transition-all focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10">
-
-          {/* Message input */}
           <div className="flex items-center gap-2 px-3 pt-3 sm:px-4">
             <button
               type="button"
@@ -41,20 +46,20 @@ export default function MessageComposer({ onSend }) {
 
             <textarea
               value={message}
-              onChange={(event) => setMessage(event.target.value)}
+              onChange={handleChange}
+              onBlur={() => onTypingChange?.(false)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   handleSubmit(event);
                 }
               }}
-              placeholder="Message #general..."
+              placeholder={`Message #${channelName}...`}
               rows={1}
               className="max-h-32 min-h-10 min-w-0 flex-1 resize-none bg-transparent py-2.5 text-sm leading-6 text-[var(--text)] outline-none placeholder:text-[var(--muted)]"
             />
           </div>
 
-          {/* Bottom toolbar */}
           <div className="flex min-h-14 items-center justify-between px-3 pb-2 sm:px-4">
             <div className="flex items-center gap-1">
               <button
