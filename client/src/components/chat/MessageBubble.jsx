@@ -8,6 +8,8 @@ import {
   Trash2,
   Check,
   X,
+  Loader2,
+  Eye
 } from "lucide-react";
 
 const EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "🚀"];
@@ -21,6 +23,7 @@ export default function MessageBubble({
   onReact,
   currentUserId,
   members = [],
+  seenBy = [],
 }) {
   const sender = message.sender || {};
   const name = sender.name || message.name || "User";
@@ -85,7 +88,9 @@ export default function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
 
   const date = message.createdAt ? new Date(message.createdAt) : null;
 
@@ -139,9 +144,36 @@ export default function MessageBubble({
     }
   };
 
-  const handleDelete = () => {
-    if (window.confirm("Are you sure you want to delete this message?")) {
-      onDelete?.(message._id);
+  const handleEditKeyDown = (event) => {
+    if (saving) return;
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setEditContent(content);
+      setEditing(false);
+      return;
+    }
+
+    if (
+      event.key === "Enter" &&
+      (event.ctrlKey || event.metaKey)
+    ) {
+      event.preventDefault();
+      handleSave();
+    }
+  };
+  const handleDelete = async () => {
+    if (deleting || saving) return;
+
+    if (!window.confirm("Are you sure you want to delete this message?")) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      await onDelete?.(message._id);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -188,7 +220,13 @@ export default function MessageBubble({
 
         {parent && (
           <div className={`mb-2 flex ${isOwn ? "justify-end" : "justify-start"}`}>
-            <div className="max-w-full rounded-lg border-l-2 border-indigo-500 bg-indigo-500/5 px-3 py-2 text-left">
+            <button
+              type="button"
+              onClick={() => onJumpToMessage?.(parent._id)}
+              disabled={!parent._id}
+              title="Jump to original message"
+              className="max-w-full rounded-lg border-l-2 border-indigo-500 bg-indigo-500/5 px-3 py-2 text-left transition hover:bg-indigo-500/10 disabled:cursor-default"
+            >
               <p className="text-xs font-semibold text-indigo-500">
                 {parent.sender?.name || "Original message"}
               </p>
@@ -196,7 +234,7 @@ export default function MessageBubble({
               <p className="mt-1 truncate text-xs text-[var(--muted)]">
                 {parent.content || "Original message unavailable"}
               </p>
-            </div>
+            </button>
           </div>
         )}
 
@@ -212,6 +250,7 @@ export default function MessageBubble({
               <textarea
                 value={editContent}
                 onChange={(event) => setEditContent(event.target.value)}
+                onKeyDown={handleEditKeyDown}
                 maxLength={5000}
                 autoFocus
                 rows={3}
@@ -280,6 +319,62 @@ export default function MessageBubble({
           </div>
         )}
 
+        {isOwn && !isDeleted && seenBy.length > 0 && (
+          <div className="relative mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setReceiptOpen((value) => !value)}
+              aria-expanded={receiptOpen}
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-indigo-500 transition hover:bg-indigo-500/10"
+            >
+              <Eye size={13} />
+              Seen by {seenBy.length}
+            </button>
+
+            <AnimatePresence>
+              {receiptOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 7, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 7, scale: 0.96 }}
+                  transition={{ duration: 0.18 }}
+                  className="absolute right-0 top-full z-40 mt-2 w-64 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] text-left shadow-2xl"
+                >
+                  <div className="border-b border-[var(--border)] px-4 py-3">
+                    <p className="text-xs font-bold text-[var(--text)]">
+                      Seen by {seenBy.length} {seenBy.length === 1 ? "person" : "people"}
+                    </p>
+                  </div>
+
+                  <div className="max-h-56 overflow-y-auto p-2">
+                    {seenBy.map((reader) => (
+                      <div
+                        key={reader._id || reader.id}
+                        className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-[var(--surface-hover)]"
+                      >
+                        {reader.avatar ? (
+                          <img
+                            src={reader.avatar}
+                            alt=""
+                            className="h-8 w-8 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white">
+                            {(reader.name || "U").charAt(0).toUpperCase()}
+                          </div>
+                        )}
+
+                        <span className="truncate text-sm font-medium text-[var(--text)]">
+                          {reader.name || "Member"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
         {!editing && (
           <div className="mt-2 flex flex-wrap items-center gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
             {!isDeleted && (
@@ -350,11 +445,16 @@ export default function MessageBubble({
                 <button
                   type="button"
                   onClick={handleDelete}
+                  disabled={deleting || saving}
                   aria-label="Delete message"
-                  title="Delete message"
-                  className="rounded-lg p-2 text-[var(--muted)] hover:bg-red-500/10 hover:text-red-500"
+                  title={deleting ? "Deleting message..." : "Delete message"}
+                  className="rounded-lg p-2 text-[var(--muted)] hover:bg-red-500/10 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <Trash2 size={15} />
+                  {deleting ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={15} />
+                  )}
                 </button>
               </>
             )}
@@ -372,3 +472,9 @@ export default function MessageBubble({
     </motion.div>
   );
 }
+
+
+
+
+
+

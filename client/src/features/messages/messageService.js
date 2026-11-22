@@ -17,9 +17,20 @@ const messageService = {
     return response.data;
   },
 
-  searchMessages: async (channelId, query) => {
+  searchMessages: async (channelId, query, filters = {}) => {
+    const params = {
+      q: query,
+      ...(filters.senderId && { senderId: filters.senderId }),
+      ...(filters.dateFilter &&
+        filters.dateFilter !== "all" && {
+          dateFilter: filters.dateFilter,
+        }),
+      ...(filters.dateFilter === "custom" &&
+        filters.date && { date: filters.date }),
+    };
+
     const response = await api.get(`/messages/${channelId}/search`, {
-      params: { q: query },
+      params,
     });
 
     return response.data.messages || [];

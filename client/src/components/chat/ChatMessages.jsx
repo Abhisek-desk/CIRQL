@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 
 import MessageBubble from "./MessageBubble";
 import TypingIndicator from "./TypingIndicator";
@@ -7,10 +7,12 @@ import TypingIndicator from "./TypingIndicator";
 export default function ChatMessages({
   messages = [],
   typingUsers = [],
+  channelReadStates = [],
   channel,
   currentUserId,
   members = [],
   highlightMessageId,
+  firstUnreadMessageId,
   onEditMessage,
   onDeleteMessage,
   onReplyMessage,
@@ -20,18 +22,25 @@ export default function ChatMessages({
   const lastMessageIdRef = useRef(null);
   const [highlightedId, setHighlightedId] = useState(null);
 
-  // Only auto-scroll when a new message is added at the bottom.
+  // Scroll to the latest message on initial load and when a new message arrives.
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
     const lastMessageId = lastMessage?._id || lastMessage?.id || null;
 
-    if (
-      lastMessageId &&
-      lastMessageIdRef.current &&
-      String(lastMessageId) !== String(lastMessageIdRef.current)
-    ) {
-      bottomRef.current?.scrollIntoView({
-        behavior: "smooth",
+    if (!lastMessageId) {
+      lastMessageIdRef.current = null;
+      return;
+    }
+
+    const isInitialLoad = !lastMessageIdRef.current;
+    const isNewMessage =
+      String(lastMessageId) !== String(lastMessageIdRef.current);
+
+    if (isInitialLoad || isNewMessage) {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({
+          behavior: isInitialLoad ? "auto" : "smooth",
+        });
       });
     }
 
@@ -93,6 +102,10 @@ export default function ChatMessages({
 
         {messages.map((message) => {
           const messageId = String(message._id || message.id);
+          const isFirstUnread =
+            firstUnreadMessageId &&
+            messageId === String(firstUnreadMessageId);
+
           const senderId =
             message.sender?._id ||
             message.sender?.id ||
@@ -104,10 +117,42 @@ export default function ChatMessages({
 
           const isHighlighted = highlightedId === messageId;
 
+          const seenBy = isOwn
+            ? channelReadStates
+                .filter((state) => {
+                  const readerId = state.user?._id || state.user;
+
+                  return (
+                    String(readerId) !== String(senderId) &&
+                    new Date(state.lastReadAt).getTime() >=
+                      new Date(message.createdAt).getTime()
+                  );
+                })
+                .map((state) => state.user)
+                .filter(Boolean)
+            : [];
+
           return (
-            <div
-              key={messageId}
-              id={`message-${messageId}`}
+            <div key={messageId}>
+              {isFirstUnread && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.97 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex items-center gap-3 px-5 py-4"
+                  role="separator"
+                  aria-label="New messages"
+                >
+                  <div className="h-px flex-1 bg-indigo-500/50" />
+                  <span className="rounded-full bg-indigo-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-indigo-500">
+                    New messages
+                  </span>
+                  <div className="h-px flex-1 bg-indigo-500/50" />
+                </motion.div>
+              )}
+
+              <div
+                id={`message-${messageId}`}
               className={`rounded-xl transition-all duration-500 ${
                 isHighlighted
                   ? "bg-indigo-500/10 ring-2 ring-inset ring-indigo-500/70"
@@ -116,6 +161,7 @@ export default function ChatMessages({
             >
               <MessageBubble
                 message={message}
+                seenBy={seenBy}
                 isOwn={Boolean(isOwn)}
                 currentUserId={currentUserId}
                 members={members}
@@ -124,6 +170,7 @@ export default function ChatMessages({
                 onReply={onReplyMessage}
                 onReact={onReactMessage}
               />
+              </div>
             </div>
           );
         })}
@@ -139,3 +186,6 @@ export default function ChatMessages({
     </div>
   );
 }
+
+
+

@@ -1,4 +1,4 @@
-﻿import { Server } from "socket.io";
+import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
@@ -59,6 +59,11 @@ export const initializeSocketServer = (httpServer) => {
 
     // ONLINE PRESENCE
     addOnlineUser(userId, socket.id);
+
+    // Send the current online users to the newly connected client.
+    socket.emit("presence:sync", {
+      onlineUsers: getOnlineUsers(),
+    });
 
     io.emit("presence:online", {
       userId,
@@ -205,12 +210,23 @@ export const initializeSocketServer = (httpServer) => {
     });
 
     // DISCONNECT
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       const wentOffline = removeOnlineUser(userId, socket.id);
 
       if (wentOffline) {
+        const lastSeen = new Date();
+
+        try {
+          await User.findByIdAndUpdate(userId, {
+            $set: { lastSeen },
+          });
+        } catch (error) {
+          console.error("Could not save last seen:", error.message);
+        }
+
         io.emit("presence:offline", {
           userId,
+          lastSeen,
           onlineUsers: getOnlineUsers(),
         });
       }

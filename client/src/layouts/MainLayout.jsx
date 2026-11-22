@@ -14,6 +14,7 @@ import CreateItemModal from "../components/common/CreateItemModal";
 import workspaceService from "../features/workspace/workspaceService";
 import messageService from "../features/messages/messageService";
 import notificationService from "../features/notifications/notificationService";
+import readStateService from "../features/messages/readStateService";
 
 import { connectSocket, disconnectSocket } from "../services/socket";
 
@@ -30,6 +31,8 @@ export default function MainLayout() {
   const [selectedChannel, setSelectedChannel] = useState(null);
 
   const [messages, setMessages] = useState([]);
+  const [channelReadStates, setChannelReadStates] = useState([]);
+  const [firstUnreadMessageId, setFirstUnreadMessageId] = useState(null);
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
@@ -38,6 +41,11 @@ export default function MainLayout() {
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [searchFilters, setSearchFilters] = useState({
+    senderId: "",
+    dateFilter: "all",
+    date: "",
+  });
   const [pendingSearchMessage, setPendingSearchMessage] = useState(null);
   const [highlightMessageId, setHighlightMessageId] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
@@ -47,16 +55,59 @@ export default function MainLayout() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(true);
-  const [pendingNotificationChannel, setPendingNotificationChannel] = useState(null);
+  const [channelUnreadCounts, setChannelUnreadCounts] = useState({});
+  const [pendingNotificationChannel, setPendingNotificationChannel] =
+    useState(null);
 
+  const selectedChannelRef = useRef(null);
+  const selectedWorkspaceRef = useRef(null);
+  selectedChannelRef.current = selectedChannel;
+  selectedWorkspaceRef.current = selectedWorkspace;
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
+  const applyMessageUpdate = (previous, updatedMessage) => {
+    const targetId = String(updatedMessage._id);
+
+    return previous.map((message) => {
+      if (String(message._id) === targetId) {
+        return {
+          ...message,
+          ...updatedMessage,
+          replyTo:
+            message.replyTo && typeof message.replyTo === "object"
+              ? message.replyTo
+              : updatedMessage.replyTo ?? message.replyTo,
+          reactions: Array.isArray(updatedMessage.reactions)
+            ? updatedMessage.reactions
+            : message.reactions,
+        };
+      }
+
+      if (
+        message.replyTo &&
+        typeof message.replyTo === "object" &&
+        String(message.replyTo._id) === targetId
+      ) {
+        return {
+          ...message,
+          replyTo: {
+            ...message.replyTo,
+            content: updatedMessage.content,
+            sender: updatedMessage.sender || message.replyTo.sender,
+            editedAt: updatedMessage.editedAt || message.replyTo.editedAt,
+          },
+        };
+      }
+
+      return message;
+    });
+  };
+
   // GLOBAL MESSAGE SEARCH KEYBOARD SHORTCUT
   useEffect(() => {
     const handleSearchShortcut = (event) => {
       const isSearchShortcut =
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === "k";
+        (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k";
 
       if (isSearchShortcut) {
         event.preventDefault();
@@ -96,7 +147,8 @@ export default function MainLayout() {
 
         const results = await messageService.searchMessages(
           channelId,
-          query
+          query,
+          searchFilters,
         );
 
         if (active) {
@@ -106,7 +158,7 @@ export default function MainLayout() {
         if (active) {
           setSearchResults([]);
           setSearchError(
-            error.response?.data?.message || "Could not search messages"
+            error.response?.data?.message || "Could not search messages",
           );
         }
       } finally {
@@ -120,7 +172,7 @@ export default function MainLayout() {
       active = false;
       clearTimeout(timer);
     };
-  }, [searchQuery, searchOpen, selectedChannel?._id]);
+  }, [searchQuery, searchOpen, selectedChannel?._id, searchFilters]);
 
   // RESET SEARCH WHEN CHANNEL CHANGES
   useEffect(() => {
@@ -129,6 +181,11 @@ export default function MainLayout() {
     setSearchResults([]);
     setSearchError("");
     setPendingSearchMessage(null);
+    setSearchFilters({
+      senderId: "",
+      dateFilter: "all",
+      date: "",
+    });
   }, [selectedChannel?._id]);
 
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
@@ -154,11 +211,44 @@ export default function MainLayout() {
       setOnlineUsers(payload?.onlineUsers || []);
     };
 
+    const handlePresenceOffline = (payload) => {
+      setOnlineUsers(payload?.onlineUsers || []);
+
+      if (payload?.userId) {
+        setWorkspaceMembers((previous) =>
+          previous.map((member) =>
+            String(member._id) === String(payload.userId)
+              ? { ...member, lastSeen: payload.lastSeen }
+              : member,
+          ),
+        );
+      }
+    };
+
+    const handlePresenceStatus = (payload) => {
+      if (!payload?.userId) return;
+
+      setWorkspaceMembers((previous) =>
+        previous.map((member) =>
+          String(member._id) === String(payload.userId)
+            ? {
+                ...member,
+                customStatusText: payload.customStatusText || "",
+                customStatusEmoji: payload.customStatusEmoji || "",
+                customStatusExpiresAt: payload.customStatusExpiresAt || null,
+              }
+            : member,
+        ),
+      );
+    };
+
     const handleNewNotification = (notification) => {
       if (!notification?._id) return;
 
       setNotifications((previous) => {
-        if (previous.some((item) => String(item._id) === String(notification._id))) {
+        if (
+          previous.some((item) => String(item._id) === String(notification._id))
+        ) {
           return previous;
         }
 
@@ -168,8 +258,31 @@ export default function MainLayout() {
       if (!notification.isRead) {
         setUnreadCount((previous) => previous + 1);
         toast("New notification", {
-          icon: "🔔",
+          icon: "ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
         });
+
+        const notificationChannel = notification.channel;
+        const notificationChannelId =
+          notificationChannel?._id || notificationChannel;
+
+        const notificationWorkspaceId =
+          notificationChannel?.workspace?._id ||
+          notificationChannel?.workspace;
+
+        const activeWorkspaceId = selectedWorkspaceRef.current?._id;
+        const activeChannelId = selectedChannelRef.current?._id;
+
+        if (
+          notificationChannelId &&
+          String(notificationWorkspaceId) === String(activeWorkspaceId) &&
+          String(notificationChannelId) !== String(activeChannelId)
+        ) {
+          setChannelUnreadCounts((previous) => ({
+            ...previous,
+            [notificationChannelId]:
+              (previous[notificationChannelId] || 0) + 1,
+          }));
+        }
       }
     };
 
@@ -178,7 +291,9 @@ export default function MainLayout() {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("presence:online", handlePresence);
-    socket.on("presence:offline", handlePresence);
+    socket.on("presence:offline", handlePresenceOffline);
+    socket.on("presence:sync", handlePresence);
+    socket.on("presence:status", handlePresenceStatus);
 
     setSocketConnected(socket.connected);
 
@@ -186,7 +301,9 @@ export default function MainLayout() {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("presence:online", handlePresence);
-      socket.off("presence:offline", handlePresence);
+      socket.off("presence:offline", handlePresenceOffline);
+      socket.off("presence:sync", handlePresence);
+      socket.off("presence:status", handlePresenceStatus);
       socket.off("notification:new", handleNewNotification);
       disconnectSocket();
     };
@@ -335,6 +452,84 @@ export default function MainLayout() {
     };
   }, [selectedWorkspace?._id]);
 
+  // LOAD UNREAD COUNTS FOR THE SELECTED WORKSPACE
+  useEffect(() => {
+    let active = true;
+
+    const loadUnreadCounts = async () => {
+      if (!selectedWorkspace?._id) {
+        setChannelUnreadCounts({});
+        return;
+      }
+
+      try {
+        const counts = await readStateService.getUnreadCounts(
+          selectedWorkspace._id
+        );
+
+        if (!active) return;
+
+        const mappedCounts = {};
+
+        counts.forEach((item) => {
+          mappedCounts[String(item.channelId)] = item.count;
+        });
+
+        setChannelUnreadCounts(mappedCounts);
+      } catch (error) {
+        if (active) {
+          console.error("Could not load unread counts:", error);
+        }
+      }
+    };
+
+    loadUnreadCounts();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedWorkspace?._id]);
+
+  // MARK THE ACTIVE CHANNEL AS READ
+  useEffect(() => {
+    const channelId = selectedChannel?._id;
+
+    if (!channelId) return;
+
+    setChannelUnreadCounts((previous) => ({
+      ...previous,
+      [channelId]: 0,
+    }));
+
+    setFirstUnreadMessageId(null);
+
+    let active = true;
+
+    const markAsRead = async () => {
+      try {
+        const result = await readStateService.markChannelAsRead(channelId);
+
+        if (active) {
+          setFirstUnreadMessageId(
+            result.firstUnreadMessageId
+              ? String(result.firstUnreadMessageId)
+              : null
+          );
+        }
+      } catch (error) {
+        if (active) {
+          console.error("Could not mark channel as read:", error);
+        }
+      }
+    };
+
+    markAsRead();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedChannel?._id]);
+
   // TYPING EVENTS
   const handleTypingChange = useCallback(
     (isTyping) => {
@@ -385,6 +580,7 @@ export default function MainLayout() {
 
     setMessages([]);
     setTypingUsers([]);
+    setChannelReadStates([]);
     setLoadingMessages(true);
 
     const handleNewMessage = (message) => {
@@ -405,24 +601,19 @@ export default function MainLayout() {
       });
     };
 
-    const handleMessageUpdated = (updatedMessage) => {
-      if (!active) return;
+  const handleMessageUpdated = (updatedMessage) => {
+    if (!active) return;
 
-      const incomingChannelId =
-        updatedMessage.channel?._id || updatedMessage.channel;
+    const incomingChannelId =
+      updatedMessage.channel?._id || updatedMessage.channel;
 
-      if (String(incomingChannelId) !== String(channelId)) return;
+    if (String(incomingChannelId) !== String(channelId)) return;
 
-      setMessages((previous) =>
-        previous.map((message) =>
-          String(message._id) === String(updatedMessage._id)
-            ? updatedMessage
-            : message,
-        ),
-      );
-    };
-
-    const handleMessageDeleted = (deletedMessage) => {
+    setMessages((previous) =>
+      applyMessageUpdate(previous, updatedMessage),
+    );
+  };
+  const handleMessageDeleted = (deletedMessage) => {
       if (!active) return;
 
       const incomingChannelId =
@@ -440,18 +631,40 @@ export default function MainLayout() {
     };
 
     const handleMessageReactions = (payload) => {
-  if (!active) return;
+      if (!active) return;
 
-  if (String(payload?.channelId) !== String(channelId)) return;
+      if (String(payload?.channelId) !== String(channelId)) return;
 
-  setMessages((previous) =>
-    previous.map((message) =>
-      String(message._id) === String(payload.messageId)
-        ? { ...message, reactions: payload.reactions }
-        : message,
-    ),
-  );
-};
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(payload.messageId)
+            ? { ...message, reactions: payload.reactions }
+            : message,
+        ),
+      );
+    };
+
+    const handleChannelRead = (payload) => {
+      if (!active) return;
+      if (String(payload?.channelId) !== String(channelId)) return;
+      if (!payload?.user?._id || !payload?.lastReadAt) return;
+
+      setChannelReadStates((previous) => {
+        const existing = previous.filter(
+          (item) =>
+            String(item.user?._id || item.user) !==
+            String(payload.user._id)
+        );
+
+        return [
+          {
+            user: payload.user,
+            lastReadAt: payload.lastReadAt,
+          },
+          ...existing,
+        ];
+      });
+    };
 
     const handleTypingStart = (payload) => {
       console.log("RECEIVED TYPING START:", payload);
@@ -489,12 +702,18 @@ export default function MainLayout() {
     socket.on("typing:start", handleTypingStart);
     socket.on("typing:stop", handleTypingStop);
     socket.on("message:reactions", handleMessageReactions);
+    socket.on("channel:read", handleChannelRead);
 
     const loadHistory = async () => {
       try {
-        const history = await messageService.getMessages(channelId);
+        const [history, readStates] = await Promise.all([
+          messageService.getMessages(channelId),
+          readStateService.getChannelReadReceipts(channelId),
+        ]);
 
         if (!active) return;
+
+        setChannelReadStates(readStates);
 
         setMessages((previous) => {
           const combined = [...history, ...previous];
@@ -560,6 +779,7 @@ export default function MainLayout() {
       socket.off("typing:stop", handleTypingStop);
       socket.off("connect", joinChannel);
       socket.off("message:reactions", handleMessageReactions);
+      socket.off("channel:read", handleChannelRead);
 
       if (socket.connected) {
         socket.emit("channel:leave", channelId);
@@ -646,9 +866,10 @@ export default function MainLayout() {
       );
 
       setMessages((previous) =>
-        previous.map((message) =>
-          String(message._id) === String(messageId) ? updatedMessage : message,
-        ),
+        applyMessageUpdate(previous, {
+          ...updatedMessage,
+          _id: updatedMessage._id || messageId,
+        }),
       );
 
       const socket = connectSocket(token);
@@ -663,7 +884,6 @@ export default function MainLayout() {
       throw error;
     }
   };
-
   // DELETE MESSAGE
   const handleDeleteMessage = async (messageId) => {
     try {
@@ -696,27 +916,22 @@ export default function MainLayout() {
   };
 
   // TOGGLE MESSAGE REACTION
-const handleReactMessage = async (messageId, emoji) => {
-  try {
-    const response = await messageService.toggleReaction(
-      messageId,
-      emoji,
-    );
+  const handleReactMessage = async (messageId, emoji) => {
+    try {
+      const response = await messageService.toggleReaction(messageId, emoji);
 
-    // Update the current user's UI immediately.
-    setMessages((previous) =>
-      previous.map((message) =>
-        String(message._id) === String(messageId)
-          ? { ...message, reactions: response.reactions }
-          : message,
-      ),
-    );
-  } catch (error) {
-    toast.error(
-      error.response?.data?.message || "Could not update reaction",
-    );
-  }
-};
+      // Update the current user's UI immediately.
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(messageId)
+            ? { ...message, reactions: response.reactions }
+            : message,
+        ),
+      );
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Could not update reaction");
+    }
+  };
 
   const handleSelectWorkspace = (workspace) => {
     setSelectedWorkspace(workspace);
@@ -724,79 +939,143 @@ const handleReactMessage = async (messageId, emoji) => {
   };
 
   const handleSearchResultSelect = async (message) => {
-  const channelId = selectedChannel?._id;
+    const channelId = selectedChannel?._id;
 
-  if (!channelId || !message?._id) return;
+    if (!channelId || !message?._id) return;
 
-  setSearchOpen(false);
-  setPendingSearchMessage(message);
-  setHighlightMessageId(null);
+    setSearchOpen(false);
+    setPendingSearchMessage(message);
+    setHighlightMessageId(null);
 
-  try {
-    let currentMessages = [...messages];
+    try {
+      let currentMessages = [...messages];
 
-    let found = currentMessages.some(
-      (item) => String(item._id) === String(message._id)
-    );
-
-    let cursor = currentMessages[0]?._id;
-    let pageCount = 0;
-
-    while (!found && cursor && pageCount < 100) {
-      const page = await messageService.getMessagesPage(
-        channelId,
-        cursor,
-        30
+      let found = currentMessages.some(
+        (item) => String(item._id) === String(message._id),
       );
 
-      const olderMessages = page.messages || [];
+      let cursor = currentMessages[0]?._id;
+      let pageCount = 0;
 
-      if (olderMessages.length === 0) break;
+      while (!found && cursor && pageCount < 100) {
+        const page = await messageService.getMessagesPage(
+          channelId,
+          cursor,
+          30,
+        );
 
-      currentMessages = [...olderMessages, ...currentMessages];
+        const olderMessages = page.messages || [];
 
-      found = currentMessages.some(
-        (item) => String(item._id) === String(message._id)
-      );
+        if (olderMessages.length === 0) break;
 
-      if (!page.hasMore || !page.nextCursor) break;
+        currentMessages = [...olderMessages, ...currentMessages];
 
-      cursor = page.nextCursor;
-      pageCount += 1;
-    }
+        found = currentMessages.some(
+          (item) => String(item._id) === String(message._id),
+        );
 
-    if (!found) {
-      toast.error("Could not find this message in channel history.");
-      setPendingSearchMessage(null);
-      return;
-    }
+        if (!page.hasMore || !page.nextCursor) break;
 
-    setMessages((previous) => {
-      const unique = new Map();
+        cursor = page.nextCursor;
+        pageCount += 1;
+      }
 
-      [...currentMessages, ...previous].forEach((item) => {
-        unique.set(String(item._id), item);
+      if (!found) {
+        toast.error("Could not find this message in channel history.");
+        setPendingSearchMessage(null);
+        return;
+      }
+
+      setMessages((previous) => {
+        const unique = new Map();
+
+        [...currentMessages, ...previous].forEach((item) => {
+          unique.set(String(item._id), item);
+        });
+
+        return Array.from(unique.values()).sort(
+          (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+        );
       });
 
-      return Array.from(unique.values()).sort(
-        (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+      setHighlightMessageId(String(message._id));
+      setPendingSearchMessage(null);
+    } catch (error) {
+      console.error("Jump to message error:", error);
+      setPendingSearchMessage(null);
+
+      toast.error(
+        error.response?.data?.message || "Could not load the selected message.",
       );
-    });
+    }
+  };
 
-    setHighlightMessageId(String(message._id));
-    setPendingSearchMessage(null);
-  } catch (error) {
-    console.error("Jump to message error:", error);
-    setPendingSearchMessage(null);
+  const handleReplyPreviewClick = async (messageId) => {
+    if (!messageId || !selectedChannel?._id) return;
 
-    toast.error(
-      error.response?.data?.message ||
-        "Could not load the selected message."
-    );
-  }
-};
+    const channelId = selectedChannel._id;
 
- const handleSelectChannel = (channel) => {
+    try {
+      let currentMessages = [...messages];
+
+      let found = currentMessages.some(
+        (item) => String(item._id) === String(messageId),
+      );
+
+      let cursor = currentMessages[0]?._id;
+      let pageCount = 0;
+
+      while (!found && cursor && pageCount < 100) {
+        const page = await messageService.getMessagesPage(
+          channelId,
+          cursor,
+          30,
+        );
+
+        const olderMessages = page.messages || [];
+
+        if (!olderMessages.length) break;
+
+        currentMessages = [...olderMessages, ...currentMessages];
+
+        found = currentMessages.some(
+          (item) => String(item._id) === String(messageId),
+        );
+
+        if (!page.hasMore || !page.nextCursor) break;
+
+        cursor = page.nextCursor;
+        pageCount += 1;
+      }
+
+      if (!found) {
+        toast.error("Original message could not be found.");
+        return;
+      }
+
+      setMessages((previous) => {
+        const unique = new Map();
+
+        [...currentMessages, ...previous].forEach((item) => {
+          unique.set(String(item._id), item);
+        });
+
+        return Array.from(unique.values()).sort(
+          (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+        );
+      });
+
+      setHighlightMessageId(null);
+
+      requestAnimationFrame(() => {
+        setHighlightMessageId(String(messageId));
+      });
+    } catch (error) {
+      console.error("Reply navigation error:", error);
+      toast.error("Could not navigate to the original message.");
+    }
+  };
+  const handleSelectChannel = (channel) => {
     setSelectedChannel(channel);
     setReplyToMessage(null);
     setMobileMenuOpen(false);
@@ -856,12 +1135,10 @@ const handleReactMessage = async (messageId, emoji) => {
       await handleMarkNotificationRead(notification._id);
     }
 
-    const channelId =
-      notification.channel?._id || notification.channel;
+    const channelId = notification.channel?._id || notification.channel;
 
     const workspaceId =
-      notification.channel?.workspace?._id ||
-      notification.channel?.workspace;
+      notification.channel?.workspace?._id || notification.channel?.workspace;
 
     if (!channelId || !workspaceId) {
       toast.error("Could not locate this notification's channel");
@@ -919,6 +1196,9 @@ const handleReactMessage = async (messageId, emoji) => {
           onSelectChannel={handleSelectChannel}
           onCreateChannel={() => setChannelModalOpen(true)}
           user={user}
+          members={workspaceMembers}
+          onlineUsers={onlineUsers}
+          unreadCounts={channelUnreadCounts}
         />
       </div>
 
@@ -954,6 +1234,9 @@ const handleReactMessage = async (messageId, emoji) => {
                 onSelectChannel={handleSelectChannel}
                 onCreateChannel={() => setChannelModalOpen(true)}
                 user={user}
+                members={workspaceMembers}
+                onlineUsers={onlineUsers}
+                unreadCounts={channelUnreadCounts}
               />
             </motion.div>
           </motion.div>
@@ -966,7 +1249,7 @@ const handleReactMessage = async (messageId, emoji) => {
           channel={selectedChannel}
           socketConnected={socketConnected}
           onlineCount={onlineCount}
-         onSearchClick={() => setSearchOpen(true)}
+          onSearchClick={() => setSearchOpen(true)}
           notifications={notifications}
           unreadCount={unreadCount}
           notificationsLoading={notificationsLoading}
@@ -975,18 +1258,28 @@ const handleReactMessage = async (messageId, emoji) => {
           onNotificationClick={handleNotificationClick}
         />
 
-      <MessageSearch
-        open={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        channel={selectedChannel}
-        query={searchQuery}
-        onQueryChange={setSearchQuery}
-        results={searchResults}
-        loading={searchLoading}
-        error={searchError}
-        onSelectResult={handleSearchResultSelect}
-      />
-{loadingWorkspaces || loadingChannels ? (
+        <MessageSearch
+          open={searchOpen}
+          onClose={() => setSearchOpen(false)}
+          channel={selectedChannel}
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          results={searchResults}
+          loading={searchLoading}
+          error={searchError}
+          onSelectResult={handleSearchResultSelect}
+          members={workspaceMembers}
+          filters={searchFilters}
+          onFiltersChange={setSearchFilters}
+          onClearFilters={() =>
+            setSearchFilters({
+              senderId: "",
+              dateFilter: "all",
+              date: "",
+            })
+          }
+        />
+        {loadingWorkspaces || loadingChannels ? (
           <div className="flex flex-1 items-center justify-center">
             <div className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-500/20 border-t-indigo-500" />
           </div>
@@ -1026,14 +1319,17 @@ const handleReactMessage = async (messageId, emoji) => {
             ) : (
               <ChatMessages
                 messages={messages}
+              channelReadStates={channelReadStates}
                 channel={selectedChannel}
+                firstUnreadMessageId={firstUnreadMessageId}
                 typingUsers={typingUsers}
-              members={workspaceMembers}
+                members={workspaceMembers}
                 currentUserId={currentUserId}
-               highlightMessageId={highlightMessageId}
+                highlightMessageId={highlightMessageId}
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
                 onReplyMessage={setReplyToMessage}
+              onJumpToMessage={handleReplyPreviewClick}
                 onReactMessage={handleReactMessage}
               />
             )}
@@ -1070,12 +1366,6 @@ const handleReactMessage = async (messageId, emoji) => {
     </div>
   );
 }
-
-
-
-
-
-
 
 
 

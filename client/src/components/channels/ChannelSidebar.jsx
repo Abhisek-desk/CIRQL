@@ -1,6 +1,7 @@
 ﻿import { motion } from "motion/react";
-import { Hash, Plus, ChevronDown, Lock } from "lucide-react";
+import { Hash, Plus, ChevronDown, Lock, Users } from "lucide-react";
 import ProfileMenu from "../common/ProfileMenu";
+import WorkspaceMembers from "../presence/WorkspaceMembers";
 
 export default function ChannelSidebar({
   onClose,
@@ -10,6 +11,9 @@ export default function ChannelSidebar({
   onSelectChannel,
   onCreateChannel,
   user,
+  unreadCounts = {},
+  members = [],
+  onlineUsers = [],
 }) {
   return (
     <motion.aside
@@ -74,7 +78,10 @@ export default function ChannelSidebar({
         ) : (
           <div className="space-y-1">
             {channels.map((channel, index) => {
-              const active = selectedChannel?._id === channel._id;
+              const active =
+                String(selectedChannel?._id) === String(channel._id);
+
+              const unreadCount = Number(unreadCounts[channel._id] || 0);
 
               return (
                 <motion.button
@@ -90,15 +97,55 @@ export default function ChannelSidebar({
                   }`}
                 >
                   {channel.type === "private" ? (
-                    <Lock size={16} />
+                    <Lock size={16} className="shrink-0" />
                   ) : (
-                    <Hash size={17} />
+                    <Hash size={17} className="shrink-0" />
                   )}
-                  <span className="truncate">{channel.name}</span>
+
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {channel.name}
+                  </span>
+
+                  {unreadCount > 0 && !active && (
+                    <motion.span
+                      key={unreadCount}
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 450,
+                        damping: 20,
+                      }}
+                      className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-indigo-600 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-indigo-500/30"
+                    >
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </motion.span>
+                  )}
                 </motion.button>
               );
             })}
           </div>
+        )}
+
+        <div className="my-5 border-t border-[var(--border)]" />
+
+        <div className="mb-3 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+          <Users size={14} />
+          Workspace members
+          <span className="ml-auto rounded-md bg-[var(--surface)] px-1.5 py-0.5 text-[10px]">
+            {members.length}
+          </span>
+        </div>
+
+        {workspace ? (
+          <WorkspaceMembers
+            members={members}
+            onlineUsers={onlineUsers}
+          />
+        ) : (
+          <p className="px-3 py-3 text-xs text-[var(--muted)]">
+            Select a workspace to see its members.
+          </p>
         )}
       </div>
 

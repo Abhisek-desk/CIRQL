@@ -44,7 +44,14 @@ export const sendMessage = async (req, res, next) => {
 export const searchMessages = async (req, res, next) => {
   try {
     const { channelId } = req.params;
-    const query = String(req.query.q || "").trim();
+    const {
+      q,
+      senderId,
+      dateFilter = "all",
+      date,
+    } = req.query;
+
+    const query = String(q || "").trim();
 
     if (!query || query.length > 100) {
       return res.status(400).json({
@@ -65,16 +72,98 @@ export const searchMessages = async (req, res, next) => {
       });
     }
 
+    const filters = {
+      channel: channelId,
+      deletedAt: null,
+    };
+
+    // SENDER FILTER
+    if (senderId) {
+      if (!mongoose.isValidObjectId(senderId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid sender ID",
+        });
+      }
+
+      filters.sender = senderId;
+    }
+
+    // DATE FILTER
+    const now = new Date();
+    const todayStart = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate()
+      )
+    );
+
+    if (dateFilter === "today") {
+      filters.createdAt = {
+        $gte: todayStart,
+        $lt: new Date(todayStart.getTime() + 86400000),
+      };
+    } else if (dateFilter === "yesterday") {
+      const yesterdayStart = new Date(
+        todayStart.getTime() - 86400000
+      );
+
+      filters.createdAt = {
+        $gte: yesterdayStart,
+        $lt: todayStart,
+      };
+    } else if (dateFilter === "7days") {
+      filters.createdAt = {
+        $gte: new Date(todayStart.getTime() - 6 * 86400000),
+        $lt: new Date(todayStart.getTime() + 86400000),
+      };
+    } else if (dateFilter === "custom") {
+      if (
+        typeof date !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(date)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "A valid date in YYYY-MM-DD format is required",
+        });
+      }
+
+      const customStart = new Date(`${date}T00:00:00.000Z`);
+
+      if (
+        Number.isNaN(customStart.getTime()) ||
+        customStart.toISOString().slice(0, 10) !== date
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid custom date",
+        });
+      }
+
+      filters.createdAt = {
+        $gte: customStart,
+        $lt: new Date(customStart.getTime() + 86400000),
+      };
+    } else if (dateFilter !== "all") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid date filter",
+      });
+    }
+
+    // ESCAPE REGEX INPUT
     const escapedQuery = query.replace(
       /[.*+?^${}()|[\]\\]/g,
       "\\$&"
     );
 
-    const messages = await Message.find({
-      channel: channelId,
-      deletedAt: null,
-      content: { $regex: escapedQuery, $options: "i" },
-    })
+    filters.content = {
+      $regex: escapedQuery,
+      $options: "i",
+    };
+
+    const messages = await Message.find(filters)
       .sort({ createdAt: -1 })
       .limit(20)
       .populate("sender", "name avatar");
@@ -283,3 +372,4 @@ export const deleteMessage = async (req, res, next) => {
     next(error);
   }
 };
+

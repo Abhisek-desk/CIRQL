@@ -188,16 +188,38 @@ export const deleteWorkspace = async (req, res, next) => {
 export const getWorkspaceMembers = async (req, res, next) => {
   try {
     const workspace = await Workspace.findById(req.params.workspaceId)
-      .populate("members.userId", "name avatar");
+      .populate(
+        "members.userId",
+        "name avatar lastSeen customStatusText customStatusEmoji customStatusExpiresAt",
+      );
+
+    if (!workspace) {
+      return res.status(404).json({
+        success: false,
+        message: "Workspace not found",
+      });
+    }
 
     const members = workspace.members
       .filter((member) => member.userId)
-      .map((member) => ({
-        _id: member.userId._id,
-        name: member.userId.name,
-        avatar: member.userId.avatar,
-        role: member.role,
-      }));
+      .map((member) => {
+        const user = member.userId;
+
+        const statusExpired =
+          user.customStatusExpiresAt &&
+          new Date(user.customStatusExpiresAt) <= new Date();
+
+        return {
+          _id: user._id,
+          name: user.name,
+          avatar: user.avatar,
+          lastSeen: user.lastSeen,
+          customStatusText: statusExpired ? "" : user.customStatusText,
+          customStatusEmoji: statusExpired ? "" : user.customStatusEmoji,
+          customStatusExpiresAt: user.customStatusExpiresAt,
+          role: member.role,
+        };
+      });
 
     return res.status(200).json({
       success: true,

@@ -29,6 +29,28 @@ const userSchema = new mongoose.Schema(
       default: "",
     },
 
+    lastSeen: {
+      type: Date,
+      default: null,
+    },
+
+    customStatusText: {
+      type: String,
+      default: "",
+      maxlength: 80,
+      trim: true,
+    },
+
+    customStatusEmoji: {
+      type: String,
+      default: "",
+      maxlength: 12,
+    },
+
+    customStatusExpiresAt: {
+      type: Date,
+      default: null,
+    },
     role: {
       type: String,
       enum: ["user", "admin"],
