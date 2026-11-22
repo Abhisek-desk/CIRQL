@@ -9,6 +9,7 @@ export default function ChatMessages({
   typingUsers = [],
   channel,
   currentUserId,
+  members = [],
   onEditMessage,
   onDeleteMessage,
   onReplyMessage,
@@ -59,6 +60,7 @@ export default function ChatMessages({
               message={message}
               isOwn={Boolean(isOwn)}
               currentUserId={currentUserId}
+              members={members}
               onEdit={onEditMessage}
               onDelete={onDeleteMessage}
               onReply={onReplyMessage}

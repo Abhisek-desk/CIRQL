@@ -855,6 +855,7 @@ const handleReactMessage = async (messageId, emoji) => {
                 messages={messages}
                 channel={selectedChannel}
                 typingUsers={typingUsers}
+              members={workspaceMembers}
                 currentUserId={currentUserId}
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
@@ -895,6 +896,8 @@ const handleReactMessage = async (messageId, emoji) => {
     </div>
   );
 }
+
+
 
 
 

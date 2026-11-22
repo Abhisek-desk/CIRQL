@@ -20,11 +20,67 @@ export default function MessageBubble({
   onReply,
   onReact,
   currentUserId,
+  members = [],
 }) {
   const sender = message.sender || {};
   const name = sender.name || message.name || "User";
   const avatar = sender.avatar || "";
   const content = message.content || "";
+
+  const mentionNames = members
+    .map((member) => member.name)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  const mentionRegex = mentionNames.length
+    ? new RegExp(
+        "@(" +
+          mentionNames
+            .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+            .join("|") +
+          ")(?=$|[\\s.,!?;:)}\\]])",
+        "giu"
+      )
+    : null;
+
+  const renderMessageContent = () => {
+    if (!mentionRegex || message.deletedAt) return content;
+
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    let index = 0;
+
+    mentionRegex.lastIndex = 0;
+
+    while ((match = mentionRegex.exec(content)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(content.slice(lastIndex, match.index));
+      }
+
+      parts.push(
+        <span
+          key={`mention-${index++}`}
+          className={
+            isOwn
+              ? "rounded-md bg-white/15 px-1 font-semibold text-white underline decoration-white/50 underline-offset-2"
+              : "rounded-md bg-indigo-500/10 px-1 font-semibold text-indigo-500"
+          }
+        >
+          @{match[1]}
+        </span>
+      );
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < content.length) {
+      parts.push(content.slice(lastIndex));
+    }
+
+    return parts.length ? parts : content;
+  };
+
 
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
@@ -196,7 +252,7 @@ export default function MessageBubble({
                     : "rounded-tl-sm border border-[var(--border)] bg-[var(--surface)] text-[var(--text)] shadow-sm"
               }`}
             >
-              {content}
+              {renderMessageContent()}
             </motion.div>
           )}
         </AnimatePresence>
