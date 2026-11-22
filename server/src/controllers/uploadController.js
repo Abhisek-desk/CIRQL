@@ -50,6 +50,21 @@ export const uploadFile = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.error("[CLOUDINARY UPLOAD ERROR]", {
+  message: error.message,
+  http_code: error.http_code,
+  name: error.name,
+  cloudinaryMessage:
+    error.error?.message ||
+    error.response?.data?.error?.message ||
+    error.response?.body?.error?.message ||
+    null,
+  responseBody: error.response?.body || null,
+});
+
     next(error);
   }
 };
+
+
+

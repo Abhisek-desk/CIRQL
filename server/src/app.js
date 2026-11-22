@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
@@ -73,9 +73,10 @@ app.use("/api/reactions", reactionRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/read-states", readStateRoutes);
 app.use("/api/presence", presenceRoutes);
-app.use("/api/upload", uploadRoutes);
+app.use("/api/uploads", uploadRoutes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
 export default app;
+

@@ -9,10 +9,23 @@ import {
   Check,
   X,
   Loader2,
-  Eye
+  Eye,
+  FileText,
+  Download
 } from "lucide-react";
 
 const EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "🚀"];
+
+const formatFileSize = (bytes = 0) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const isImageAttachment = (file) =>
+  file.mimeType?.startsWith("image/") ||
+  file.resourceType === "image";
+
 
 export default function MessageBubble({
   message,
@@ -29,6 +42,7 @@ export default function MessageBubble({
   const name = sender.name || message.name || "User";
   const avatar = sender.avatar || "";
   const content = message.content || "";
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
 
   const mentionNames = members
     .map((member) => member.name)
@@ -182,6 +196,63 @@ export default function MessageBubble({
     await onReact?.(message._id, emoji);
   };
 
+  const renderAttachments = () => {
+    if (!attachments.length || isDeleted) return null;
+
+    return (
+      <div className={`mt-2 grid gap-2 ${attachments.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+        {attachments.map((file) => (
+          <div key={file._id || file.publicId} className="min-w-0">
+            {isImageAttachment(file) ? (
+              <a
+                href={file.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block overflow-hidden rounded-xl border border-[var(--border)]"
+                title={`Open ${file.name}`}
+              >
+                <img
+                  src={file.url}
+                  alt={file.name}
+                  loading="lazy"
+                  className="max-h-72 w-full object-cover transition duration-300 hover:scale-[1.02]"
+                />
+              </a>
+            ) : (
+              <div className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 ${
+                isOwn ? "border-white/20 bg-white/10" : "border-[var(--border)] bg-[var(--bg)]"
+              }`}>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-500">
+                  <FileText size={21} />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className={`truncate text-xs font-semibold ${isOwn ? "text-white" : "text-[var(--text)]"}`}>
+                    {file.name}
+                  </p>
+                  <p className={`text-[11px] ${isOwn ? "text-white/65" : "text-[var(--muted)]"}`}>
+                    {formatFileSize(file.size)}
+                  </p>
+                </div>
+
+                <a
+                  href={file.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={file.name}
+                  aria-label={`Download ${file.name}`}
+                  title="Open or download file"
+                  className="rounded-lg p-2 text-indigo-500 hover:bg-indigo-500/10"
+                >
+                  <Download size={17} />
+                </a>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
   return (
     <motion.div
       initial={{ opacity: 0, y: 12, scale: 0.98 }}
@@ -292,6 +363,7 @@ export default function MessageBubble({
               }`}
             >
               {renderMessageContent()}
+              {renderAttachments()}
             </motion.div>
           )}
         </AnimatePresence>
@@ -472,6 +544,8 @@ export default function MessageBubble({
     </motion.div>
   );
 }
+
+
 
 
 

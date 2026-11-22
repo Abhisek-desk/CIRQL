@@ -13,6 +13,7 @@ import CreateItemModal from "../components/common/CreateItemModal";
 
 import workspaceService from "../features/workspace/workspaceService";
 import messageService from "../features/messages/messageService";
+import uploadService from "../features/messages/uploadService";
 import notificationService from "../features/notifications/notificationService";
 import readStateService from "../features/messages/readStateService";
 
@@ -51,6 +52,8 @@ export default function MainLayout() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -841,35 +844,74 @@ export default function MainLayout() {
   };
 
   // SEND MESSAGE
-  const handleSendMessage = (content, replyTo = null, mentionIds = []) => {
+  const handleSendMessage = async (
+    content,
+    replyTo = null,
+    mentionIds = [],
+    files = []
+  ) => {
     if (!selectedChannel?._id) return;
+    if (uploadingAttachments) return;
 
     handleTypingChange(false);
 
-    const socket = connectSocket(token);
+    const channelId = selectedChannel._id;
+    let uploadedAttachments = [];
 
-    if (!socket?.connected) {
-      toast.error("Connecting to chat server. Please try again.");
-      return;
-    }
+    try {
+      if (files.length > 0) {
+        setUploadingAttachments(true);
+        setUploadProgress(0);
 
-    socket.emit(
-      "message:send",
-      {
-        channelId: selectedChannel._id,
-        content,
-        replyTo,
-        mentionIds,
-      },
-      (response) => {
-        if (!response?.success) {
-          toast.error(response?.message || "Message could not be sent");
-          return;
+        for (let index = 0; index < files.length; index += 1) {
+          const uploadedFile = await uploadService.uploadFile(
+            files[index],
+            (progress) => {
+              const overallProgress = Math.round(
+                ((index + progress / 100) / files.length) * 100
+              );
+
+              setUploadProgress(overallProgress);
+            }
+          );
+
+          uploadedAttachments.push(uploadedFile);
         }
+      }
 
-        setReplyToMessage(null);
-      },
-    );
+      const socket = connectSocket(token);
+
+      if (!socket?.connected) {
+        toast.error("Connecting to chat server. Please try again.");
+        return;
+      }
+
+      socket.emit(
+        "message:send",
+        {
+          channelId,
+          content,
+          replyTo,
+          mentionIds,
+          attachments: uploadedAttachments,
+        },
+        (response) => {
+          if (!response?.success) {
+            toast.error(response?.message || "Message could not be sent");
+            return;
+          }
+
+          setReplyToMessage(null);
+        }
+      );
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "File upload or message sending failed"
+      );
+    } finally {
+      setUploadingAttachments(false);
+      setUploadProgress(0);
+    }
   };
 
   // EDIT MESSAGE
@@ -1354,6 +1396,8 @@ export default function MainLayout() {
               channelName={selectedChannel.name}
               members={workspaceMembers}
               onSend={handleSendMessage}
+            uploading={uploadingAttachments}
+            uploadProgress={uploadProgress}
               onTypingChange={handleTypingChange}
               replyTo={replyToMessage}
               onCancelReply={() => setReplyToMessage(null)}
@@ -1381,3 +1425,5 @@ export default function MainLayout() {
     </div>
   );
 }
+
+
