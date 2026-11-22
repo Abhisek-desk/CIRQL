@@ -11,12 +11,19 @@
 } from "lucide-react";
 
 import ThemeToggle from "../common/ThemeToggle";
+import NotificationBell from "../common/NotificationBell";
 
 export default function ChatHeader({
   onMenuClick,
   channel,
   socketConnected = false,
   onlineCount = 0,
+  notifications = [],
+  unreadCount = 0,
+  notificationsLoading = false,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
+  onNotificationClick,
 }) {
   return (
     <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--bg)] px-4 md:px-6">
@@ -94,8 +101,17 @@ export default function ChatHeader({
           aria-label="Members"
           className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface)]"
         >
-          <Users size={19} /> 
+          <Users size={19} />
         </button>
+
+        <NotificationBell
+          notifications={notifications}
+          unreadCount={unreadCount}
+          loading={notificationsLoading}
+          onMarkRead={onMarkNotificationRead}
+          onMarkAllRead={onMarkAllNotificationsRead}
+          onNotificationClick={onNotificationClick}
+        />
 
         <ThemeToggle />
       </div>

@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 import Message from "../models/Message.js";
 import { getAccessibleChannel } from "./channelAccess.js";
 import Workspace from "../models/Workspace.js";
-import Channel from "../models/Channel.js";
 import { createNotification } from "./notificationService.js";
 
 export const createMessage = async ({
@@ -10,6 +9,7 @@ export const createMessage = async ({
   senderId,
   content,
   replyTo = null,
+  mentionIds = [],
 }) => {
   const { channel } = (await getAccessibleChannel(channelId, senderId)) || {};
 
@@ -41,6 +41,40 @@ export const createMessage = async ({
     }
   }
 
+  const workspace = await Workspace.findById(channel.workspace);
+
+  if (!workspace) {
+    throw new Error("Workspace not found");
+  }
+
+  // Only accept unique IDs belonging to this workspace.
+  const workspaceMemberIds = new Set(
+    workspace.members.map((member) => member.userId.toString()),
+  );
+
+  const validMentionIds = [
+    ...new Set(
+      (Array.isArray(mentionIds) ? mentionIds : [])
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => id.toString())
+        .filter(
+          (id) =>
+            id !== senderId.toString() &&
+            workspaceMemberIds.has(id),
+        ),
+    ),
+  ];
+
+  // Private channels can only mention their own members.
+  const channelMemberIds =
+    channel.type === "private"
+      ? new Set(channel.members.map((id) => id.toString()))
+      : null;
+
+  const allowedMentionIds = validMentionIds.filter(
+    (id) => !channelMemberIds || channelMemberIds.has(id),
+  );
+
   const message = await Message.create({
     channel: channel._id,
     sender: senderId,
@@ -59,29 +93,47 @@ export const createMessage = async ({
       },
     });
 
-  const workspace = await Workspace.findById(channel.workspace);
-
   const recipientIds =
     channel.type === "private"
       ? channel.members
       : workspace.members.map((member) => member.userId);
 
+  const mentionedSet = new Set(allowedMentionIds);
   const notificationType = replyTo ? "reply" : "new_message";
 
-  await Promise.all(
-    recipientIds
-      .filter((recipientId) => recipientId.toString() !== senderId.toString())
-      .map((recipientId) =>
-        createNotification({
-          recipient: recipientId,
-          sender: senderId,
-          type: notificationType,
-          message: message._id,
-          channel: channel._id,
-          content,
-        }),
-      ),
-  );
+  // Mentioned users receive a mention notification instead of
+  // a regular message notification.
+  const notificationJobs = recipientIds
+    .filter((recipientId) => {
+      const id = recipientId.toString();
+
+      return (
+        id !== senderId.toString() &&
+        (!channelMemberIds || channelMemberIds.has(id))
+      );
+    })
+    .map((recipientId) => {
+      const id = recipientId.toString();
+
+      return createNotification({
+        recipient: recipientId,
+        sender: senderId,
+        type: mentionedSet.has(id) ? "mention" : notificationType,
+        message: message._id,
+        channel: channel._id,
+        content: content.trim(),
+      });
+    });
+
+  // Notification failures should not make an already-saved message
+  // appear to have failed.
+  const notificationResults = await Promise.allSettled(notificationJobs);
+
+  notificationResults.forEach((result) => {
+    if (result.status === "rejected") {
+      console.error("Message notification error:", result.reason?.message);
+    }
+  });
 
   return populatedMessage;
 };

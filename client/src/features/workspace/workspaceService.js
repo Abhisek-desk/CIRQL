@@ -20,6 +20,12 @@ const workspaceService = {
     const response = await api.post(`/channels/${workspaceId}`, data);
     return response.data.channel;
   },
+
+  getWorkspaceMembers: async (workspaceId) => {
+    const response = await api.get(`/workspaces/${workspaceId}/members`);
+
+    return response.data.members || [];
+  },
 };
 
 export default workspaceService;

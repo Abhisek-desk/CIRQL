@@ -12,6 +12,7 @@ import CreateItemModal from "../components/common/CreateItemModal";
 
 import workspaceService from "../features/workspace/workspaceService";
 import messageService from "../features/messages/messageService";
+import notificationService from "../features/notifications/notificationService";
 
 import { connectSocket, disconnectSocket } from "../services/socket";
 
@@ -23,6 +24,7 @@ export default function MainLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState(null);
+  const [workspaceMembers, setWorkspaceMembers] = useState([]);
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
 
@@ -32,6 +34,11 @@ export default function MainLayout() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
+
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(true);
+  const [pendingNotificationChannel, setPendingNotificationChannel] = useState(null);
 
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
@@ -59,6 +66,27 @@ export default function MainLayout() {
       setOnlineUsers(payload?.onlineUsers || []);
     };
 
+    const handleNewNotification = (notification) => {
+      if (!notification?._id) return;
+
+      setNotifications((previous) => {
+        if (previous.some((item) => String(item._id) === String(notification._id))) {
+          return previous;
+        }
+
+        return [notification, ...previous].slice(0, 50);
+      });
+
+      if (!notification.isRead) {
+        setUnreadCount((previous) => previous + 1);
+        toast("New notification", {
+          icon: "🔔",
+        });
+      }
+    };
+
+    socket.on("notification:new", handleNewNotification);
+
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("presence:online", handlePresence);
@@ -71,10 +99,40 @@ export default function MainLayout() {
       socket.off("disconnect", handleDisconnect);
       socket.off("presence:online", handlePresence);
       socket.off("presence:offline", handlePresence);
+      socket.off("notification:new", handleNewNotification);
       disconnectSocket();
     };
   }, [token]);
 
+  // LOAD NOTIFICATIONS
+  useEffect(() => {
+    let active = true;
+
+    const loadNotifications = async () => {
+      try {
+        const data = await notificationService.getNotifications();
+
+        if (!active) return;
+
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
+      } catch (error) {
+        if (active) {
+          toast.error(
+            error.response?.data?.message || "Could not load notifications",
+          );
+        }
+      } finally {
+        if (active) setNotificationsLoading(false);
+      }
+    };
+
+    loadNotifications();
+
+    return () => {
+      active = false;
+    };
+  }, []);
   // LOAD WORKSPACES
   const loadWorkspaces = useCallback(async () => {
     try {
@@ -101,6 +159,39 @@ export default function MainLayout() {
     loadWorkspaces();
   }, [loadWorkspaces]);
 
+  // LOAD WORKSPACE MEMBERS FOR @MENTIONS
+  useEffect(() => {
+    let active = true;
+
+    const loadMembers = async () => {
+      if (!selectedWorkspace?._id) {
+        setWorkspaceMembers([]);
+        return;
+      }
+
+      try {
+        const members = await workspaceService.getWorkspaceMembers(
+          selectedWorkspace._id,
+        );
+
+        if (active) {
+          setWorkspaceMembers(members);
+        }
+      } catch (error) {
+        if (active) {
+          setWorkspaceMembers([]);
+          console.error("Could not load workspace members:", error);
+        }
+      }
+    };
+
+    loadMembers();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedWorkspace?._id]);
+
   // LOAD CHANNELS
   useEffect(() => {
     let active = true;
@@ -122,7 +213,22 @@ export default function MainLayout() {
         if (!active) return;
 
         setChannels(data);
-        setSelectedChannel(data[0] || null);
+
+        if (pendingNotificationChannel) {
+          const targetChannel = data.find(
+            (channel) =>
+              String(channel._id) === String(pendingNotificationChannel),
+          );
+
+          if (targetChannel) {
+            setSelectedChannel(targetChannel);
+            setPendingNotificationChannel(null);
+          } else {
+            setSelectedChannel(data[0] || null);
+          }
+        } else {
+          setSelectedChannel(data[0] || null);
+        }
       } catch (error) {
         if (active) {
           toast.error(
@@ -263,8 +369,6 @@ export default function MainLayout() {
       console.log("RECEIVED TYPING START:", payload);
       if (!active || String(payload?.channelId) !== String(channelId)) return;
 
-      const currentUserId = user?.id || user?._id;
-
       if (String(payload.userId) === String(currentUserId)) return;
 
       setTypingUsers((previous) => {
@@ -367,7 +471,7 @@ export default function MainLayout() {
       socket.off("typing:start", handleTypingStart);
       socket.off("typing:stop", handleTypingStop);
       socket.off("connect", joinChannel);
-      socket.on("message:reactions", handleMessageReactions);
+      socket.off("message:reactions", handleMessageReactions);
 
       if (socket.connected) {
         socket.emit("channel:leave", channelId);
@@ -414,7 +518,7 @@ export default function MainLayout() {
   };
 
   // SEND MESSAGE
-  const handleSendMessage = (content, replyTo = null) => {
+  const handleSendMessage = (content, replyTo = null, mentionIds = []) => {
     if (!selectedChannel?._id) return;
 
     handleTypingChange(false);
@@ -432,6 +536,7 @@ export default function MainLayout() {
         channelId: selectedChannel._id,
         content,
         replyTo,
+        mentionIds,
       },
       (response) => {
         if (!response?.success) {
@@ -535,8 +640,103 @@ const handleReactMessage = async (messageId, emoji) => {
     setReplyToMessage(null);
     setMobileMenuOpen(false);
   };
+  // MARK ONE NOTIFICATION AS READ
+  const handleMarkNotificationRead = async (notificationId) => {
+    const notification = notifications.find(
+      (item) => String(item._id) === String(notificationId),
+    );
+
+    if (!notification || notification.isRead) return;
+
+    try {
+      await notificationService.markAsRead(notificationId);
+
+      setNotifications((previous) =>
+        previous.map((item) =>
+          String(item._id) === String(notificationId)
+            ? { ...item, isRead: true }
+            : item,
+        ),
+      );
+
+      setUnreadCount((previous) => Math.max(0, previous - 1));
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "Could not mark notification as read",
+      );
+    }
+  };
+
+  // MARK ALL NOTIFICATIONS AS READ
+  const handleMarkAllNotificationsRead = async () => {
+    if (unreadCount === 0) return;
+
+    try {
+      await notificationService.markAllAsRead();
+
+      setNotifications((previous) =>
+        previous.map((item) => ({ ...item, isRead: true })),
+      );
+
+      setUnreadCount(0);
+      toast.success("All notifications marked as read");
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "Could not update notifications",
+      );
+    }
+  };
+
+  // OPEN THE CHANNEL ASSOCIATED WITH A NOTIFICATION
+  const handleNotificationClick = async (notification) => {
+    if (!notification) return;
+
+    if (!notification.isRead) {
+      await handleMarkNotificationRead(notification._id);
+    }
+
+    const channelId =
+      notification.channel?._id || notification.channel;
+
+    const workspaceId =
+      notification.channel?.workspace?._id ||
+      notification.channel?.workspace;
+
+    if (!channelId || !workspaceId) {
+      toast.error("Could not locate this notification's channel");
+      return;
+    }
+
+    const workspace = workspaces.find(
+      (item) => String(item._id) === String(workspaceId),
+    );
+
+    if (!workspace) {
+      toast.error("You no longer have access to this workspace");
+      return;
+    }
+
+    setReplyToMessage(null);
+
+    if (String(selectedWorkspace?._id) === String(workspaceId)) {
+      const targetChannel = channels.find(
+        (item) => String(item._id) === String(channelId),
+      );
+
+      if (targetChannel) {
+        setSelectedChannel(targetChannel);
+        setMobileMenuOpen(false);
+        return;
+      }
+    }
+
+    setPendingNotificationChannel(channelId);
+    setSelectedWorkspace(workspace);
+    setMobileMenuOpen(false);
+  };
 
   const currentUserId = user?.id || user?._id;
+
   const onlineCount = onlineUsers.length;
 
   return (
@@ -605,6 +805,12 @@ const handleReactMessage = async (messageId, emoji) => {
           channel={selectedChannel}
           socketConnected={socketConnected}
           onlineCount={onlineCount}
+          notifications={notifications}
+          unreadCount={unreadCount}
+          notificationsLoading={notificationsLoading}
+          onMarkNotificationRead={handleMarkNotificationRead}
+          onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+          onNotificationClick={handleNotificationClick}
         />
 
         {loadingWorkspaces || loadingChannels ? (
@@ -660,6 +866,7 @@ const handleReactMessage = async (messageId, emoji) => {
             <MessageComposer
               key={selectedChannel._id}
               channelName={selectedChannel.name}
+              members={workspaceMembers}
               onSend={handleSendMessage}
               onTypingChange={handleTypingChange}
               replyTo={replyToMessage}
@@ -688,3 +895,7 @@ const handleReactMessage = async (messageId, emoji) => {
     </div>
   );
 }
+
+
+
+

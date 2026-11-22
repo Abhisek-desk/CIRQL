@@ -183,3 +183,27 @@ export const deleteWorkspace = async (req, res, next) => {
     next(error);
   }
 };
+
+// GET WORKSPACE MEMBERS (FOR @MENTIONS)
+export const getWorkspaceMembers = async (req, res, next) => {
+  try {
+    const workspace = await Workspace.findById(req.params.workspaceId)
+      .populate("members.userId", "name avatar");
+
+    const members = workspace.members
+      .filter((member) => member.userId)
+      .map((member) => ({
+        _id: member.userId._id,
+        name: member.userId.name,
+        avatar: member.userId.avatar,
+        role: member.role,
+      }));
+
+    return res.status(200).json({
+      success: true,
+      members,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

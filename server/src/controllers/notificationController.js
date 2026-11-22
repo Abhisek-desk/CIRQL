@@ -2,17 +2,25 @@ import Notification from "../models/Notification.js";
 
 export const getNotifications = async (req, res, next) => {
   try {
-    const notifications = await Notification.find({
-      recipient: req.user._id,
-    })
-      .populate("sender", "name avatar")
-      .populate("channel", "name")
-      .sort({ createdAt: -1 })
-      .limit(50);
+    const [notifications, unreadCount] = await Promise.all([
+      Notification.find({
+        recipient: req.user._id,
+      })
+        .populate("sender", "name avatar")
+        .populate("channel", "name workspace")
+        .sort({ createdAt: -1 })
+        .limit(50),
+
+      Notification.countDocuments({
+        recipient: req.user._id,
+        isRead: false,
+      }),
+    ]);
 
     return res.status(200).json({
       success: true,
       count: notifications.length,
+      unreadCount,
       notifications,
     });
   } catch (error) {
@@ -20,11 +28,7 @@ export const getNotifications = async (req, res, next) => {
   }
 };
 
-export const markNotificationRead = async (
-  req,
-  res,
-  next
-) => {
+export const markNotificationRead = async (req, res, next) => {
   try {
     const notification = await Notification.findOneAndUpdate(
       {
@@ -36,7 +40,7 @@ export const markNotificationRead = async (
       },
       {
         new: true,
-      }
+      },
     );
 
     if (!notification) {
@@ -55,11 +59,7 @@ export const markNotificationRead = async (
   }
 };
 
-export const markAllNotificationsRead = async (
-  req,
-  res,
-  next
-) => {
+export const markAllNotificationsRead = async (req, res, next) => {
   try {
     await Notification.updateMany(
       {
@@ -68,7 +68,7 @@ export const markAllNotificationsRead = async (
       },
       {
         isRead: true,
-      }
+      },
     );
 
     return res.status(200).json({

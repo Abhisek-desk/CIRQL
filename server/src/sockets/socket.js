@@ -1,4 +1,4 @@
-import { Server } from "socket.io";
+﻿import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
@@ -52,6 +52,9 @@ export const initializeSocketServer = (httpServer) => {
   io.on("connection", (socket) => {
     const userId = socket.user._id.toString();
 
+    // Private room for notifications sent to this user.
+    socket.join(`user:${userId}`);
+
     console.log(`User connected: ${socket.user.name}`);
 
     // ONLINE PRESENCE
@@ -96,13 +99,14 @@ export const initializeSocketServer = (httpServer) => {
     // SEND MESSAGE
     socket.on("message:send", async (payload, callback) => {
       try {
-        const { channelId, content, replyTo } = payload || {};
+        const { channelId, content, replyTo, mentionIds } = payload || {};
 
         const message = await createMessage({
           channelId,
           senderId: socket.user._id,
           content,
           replyTo,
+          mentionIds,
         });
 
         io.to(`channel:${channelId}`).emit("message:new", message);
