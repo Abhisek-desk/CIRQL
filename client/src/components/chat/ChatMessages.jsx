@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
 
 import MessageBubble from "./MessageBubble";
@@ -10,18 +10,65 @@ export default function ChatMessages({
   channel,
   currentUserId,
   members = [],
+  highlightMessageId,
   onEditMessage,
   onDeleteMessage,
   onReplyMessage,
   onReactMessage,
 }) {
   const bottomRef = useRef(null);
+  const lastMessageIdRef = useRef(null);
+  const [highlightedId, setHighlightedId] = useState(null);
+
+  // Only auto-scroll when a new message is added at the bottom.
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    const lastMessageId = lastMessage?._id || lastMessage?.id || null;
+
+    if (
+      lastMessageId &&
+      lastMessageIdRef.current &&
+      String(lastMessageId) !== String(lastMessageIdRef.current)
+    ) {
+      bottomRef.current?.scrollIntoView({
+        behavior: "smooth",
+      });
+    }
+
+    lastMessageIdRef.current = lastMessageId;
+  }, [messages]);
+
+  // Scroll to and temporarily highlight a selected search result.
+  useEffect(() => {
+    if (!highlightMessageId) return;
+
+    const timer = setTimeout(() => {
+      const element = document.getElementById(
+        `message-${highlightMessageId}`
+      );
+
+      if (element) {
+        element.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+
+        setHighlightedId(String(highlightMessageId));
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [highlightMessageId, messages]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({
-      behavior: "smooth",
-    });
-  }, [messages, typingUsers]);
+    if (!highlightedId) return;
+
+    const timer = setTimeout(() => {
+      setHighlightedId(null);
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [highlightedId]);
 
   const channelName = channel?.name || "channel";
   const typingNames = typingUsers.map((item) => item.name);
@@ -45,6 +92,7 @@ export default function ChatMessages({
         </div>
 
         {messages.map((message) => {
+          const messageId = String(message._id || message.id);
           const senderId =
             message.sender?._id ||
             message.sender?.id ||
@@ -54,18 +102,29 @@ export default function ChatMessages({
             currentUserId &&
             String(senderId) === String(currentUserId);
 
+          const isHighlighted = highlightedId === messageId;
+
           return (
-            <MessageBubble
-              key={message._id || message.id}
-              message={message}
-              isOwn={Boolean(isOwn)}
-              currentUserId={currentUserId}
-              members={members}
-              onEdit={onEditMessage}
-              onDelete={onDeleteMessage}
-              onReply={onReplyMessage}
-              onReact={onReactMessage}
-            />
+            <div
+              key={messageId}
+              id={`message-${messageId}`}
+              className={`rounded-xl transition-all duration-500 ${
+                isHighlighted
+                  ? "bg-indigo-500/10 ring-2 ring-inset ring-indigo-500/70"
+                  : ""
+              }`}
+            >
+              <MessageBubble
+                message={message}
+                isOwn={Boolean(isOwn)}
+                currentUserId={currentUserId}
+                members={members}
+                onEdit={onEditMessage}
+                onDelete={onDeleteMessage}
+                onReply={onReplyMessage}
+                onReact={onReactMessage}
+              />
+            </div>
           );
         })}
 

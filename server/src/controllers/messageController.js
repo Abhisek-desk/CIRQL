@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 import Message from "../models/Message.js";
 import { createMessage } from "../services/messageService.js";
 import { getAccessibleChannel } from "../services/channelAccess.js";
@@ -40,6 +40,54 @@ export const sendMessage = async (req, res, next) => {
   }
 };
 
+// SEARCH CHANNEL MESSAGES
+export const searchMessages = async (req, res, next) => {
+  try {
+    const { channelId } = req.params;
+    const query = String(req.query.q || "").trim();
+
+    if (!query || query.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Search query must contain 1 to 100 characters",
+      });
+    }
+
+    const access = await getAccessibleChannel(
+      channelId,
+      req.user._id
+    );
+
+    if (!access) {
+      return res.status(404).json({
+        success: false,
+        message: "Channel not found or access denied",
+      });
+    }
+
+    const escapedQuery = query.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    );
+
+    const messages = await Message.find({
+      channel: channelId,
+      deletedAt: null,
+      content: { $regex: escapedQuery, $options: "i" },
+    })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .populate("sender", "name avatar");
+
+    return res.status(200).json({
+      success: true,
+      count: messages.length,
+      messages,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 // GET CHANNEL MESSAGES
 export const getMessages = async (req, res, next) => {
   try {

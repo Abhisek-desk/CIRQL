@@ -18,6 +18,7 @@ export default function ChatHeader({
   channel,
   socketConnected = false,
   onlineCount = 0,
+  onSearchClick,
   notifications = [],
   unreadCount = 0,
   notificationsLoading = false,
@@ -77,8 +78,11 @@ export default function ChatHeader({
         </div>
 
         <button
-          aria-label="Search"
-          className="hidden rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface)] sm:block"
+          onClick={onSearchClick}
+          aria-label="Search messages"
+          title="Search messages"
+          disabled={!channel}
+          className="rounded-lg p-2 text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Search size={19} />
         </button>

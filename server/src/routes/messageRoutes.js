@@ -1,10 +1,11 @@
-import express from "express";
+﻿import express from "express";
 
 import {
   sendMessage,
   getMessages,
   editMessage,
   deleteMessage,
+  searchMessages,
 } from "../controllers/messageController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
@@ -12,6 +13,8 @@ import authMiddleware from "../middleware/authMiddleware.js";
 const router = express.Router();
 
 router.use(authMiddleware);
+
+router.get("/:channelId/search", searchMessages);
 
 router.route("/:channelId")
   .get(getMessages)

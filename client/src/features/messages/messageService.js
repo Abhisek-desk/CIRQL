@@ -1,9 +1,25 @@
-import api from "../../services/api";
+﻿import api from "../../services/api";
 
 const messageService = {
   getMessages: async (channelId) => {
     const response = await api.get(`/messages/${channelId}`, {
       params: { limit: 30 },
+    });
+
+    return response.data.messages || [];
+  },
+
+  getMessagesPage: async (channelId, before, limit = 30) => {
+    const response = await api.get(`/messages/${channelId}`, {
+      params: { before, limit },
+    });
+
+    return response.data;
+  },
+
+  searchMessages: async (channelId, query) => {
+    const response = await api.get(`/messages/${channelId}/search`, {
+      params: { q: query },
     });
 
     return response.data.messages || [];

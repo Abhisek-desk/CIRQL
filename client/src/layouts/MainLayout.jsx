@@ -7,6 +7,7 @@ import WorkspaceSidebar from "../components/common/WorkspaceSidebar";
 import ChannelSidebar from "../components/channels/ChannelSidebar";
 import ChatHeader from "../components/chat/ChatHeader";
 import ChatMessages from "../components/chat/ChatMessages";
+import MessageSearch from "../components/chat/MessageSearch";
 import MessageComposer from "../components/chat/MessageComposer";
 import CreateItemModal from "../components/common/CreateItemModal";
 
@@ -31,6 +32,14 @@ export default function MainLayout() {
   const [messages, setMessages] = useState([]);
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
+
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [pendingSearchMessage, setPendingSearchMessage] = useState(null);
+  const [highlightMessageId, setHighlightMessageId] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
@@ -42,6 +51,85 @@ export default function MainLayout() {
 
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
+  // GLOBAL MESSAGE SEARCH KEYBOARD SHORTCUT
+  useEffect(() => {
+    const handleSearchShortcut = (event) => {
+      const isSearchShortcut =
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "k";
+
+      if (isSearchShortcut) {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+
+      if (event.key === "Escape") {
+        setSearchOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleSearchShortcut);
+
+    return () => {
+      window.removeEventListener("keydown", handleSearchShortcut);
+    };
+  }, []);
+
+  // DEBOUNCED CHANNEL MESSAGE SEARCH
+  useEffect(() => {
+    const channelId = selectedChannel?._id;
+    const query = searchQuery.trim();
+
+    if (!searchOpen || !channelId || query.length < 1) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchError("");
+      return;
+    }
+
+    let active = true;
+
+    const timer = setTimeout(async () => {
+      try {
+        setSearchLoading(true);
+        setSearchError("");
+
+        const results = await messageService.searchMessages(
+          channelId,
+          query
+        );
+
+        if (active) {
+          setSearchResults(results);
+        }
+      } catch (error) {
+        if (active) {
+          setSearchResults([]);
+          setSearchError(
+            error.response?.data?.message || "Could not search messages"
+          );
+        }
+      } finally {
+        if (active) {
+          setSearchLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [searchQuery, searchOpen, selectedChannel?._id]);
+
+  // RESET SEARCH WHEN CHANNEL CHANGES
+  useEffect(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError("");
+    setPendingSearchMessage(null);
+  }, [selectedChannel?._id]);
 
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [channelModalOpen, setChannelModalOpen] = useState(false);
@@ -635,7 +723,80 @@ const handleReactMessage = async (messageId, emoji) => {
     setMobileMenuOpen(false);
   };
 
-  const handleSelectChannel = (channel) => {
+  const handleSearchResultSelect = async (message) => {
+  const channelId = selectedChannel?._id;
+
+  if (!channelId || !message?._id) return;
+
+  setSearchOpen(false);
+  setPendingSearchMessage(message);
+  setHighlightMessageId(null);
+
+  try {
+    let currentMessages = [...messages];
+
+    let found = currentMessages.some(
+      (item) => String(item._id) === String(message._id)
+    );
+
+    let cursor = currentMessages[0]?._id;
+    let pageCount = 0;
+
+    while (!found && cursor && pageCount < 100) {
+      const page = await messageService.getMessagesPage(
+        channelId,
+        cursor,
+        30
+      );
+
+      const olderMessages = page.messages || [];
+
+      if (olderMessages.length === 0) break;
+
+      currentMessages = [...olderMessages, ...currentMessages];
+
+      found = currentMessages.some(
+        (item) => String(item._id) === String(message._id)
+      );
+
+      if (!page.hasMore || !page.nextCursor) break;
+
+      cursor = page.nextCursor;
+      pageCount += 1;
+    }
+
+    if (!found) {
+      toast.error("Could not find this message in channel history.");
+      setPendingSearchMessage(null);
+      return;
+    }
+
+    setMessages((previous) => {
+      const unique = new Map();
+
+      [...currentMessages, ...previous].forEach((item) => {
+        unique.set(String(item._id), item);
+      });
+
+      return Array.from(unique.values()).sort(
+        (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+      );
+    });
+
+    setHighlightMessageId(String(message._id));
+    setPendingSearchMessage(null);
+  } catch (error) {
+    console.error("Jump to message error:", error);
+    setPendingSearchMessage(null);
+
+    toast.error(
+      error.response?.data?.message ||
+        "Could not load the selected message."
+    );
+  }
+};
+
+ const handleSelectChannel = (channel) => {
     setSelectedChannel(channel);
     setReplyToMessage(null);
     setMobileMenuOpen(false);
@@ -805,6 +966,7 @@ const handleReactMessage = async (messageId, emoji) => {
           channel={selectedChannel}
           socketConnected={socketConnected}
           onlineCount={onlineCount}
+         onSearchClick={() => setSearchOpen(true)}
           notifications={notifications}
           unreadCount={unreadCount}
           notificationsLoading={notificationsLoading}
@@ -813,7 +975,18 @@ const handleReactMessage = async (messageId, emoji) => {
           onNotificationClick={handleNotificationClick}
         />
 
-        {loadingWorkspaces || loadingChannels ? (
+      <MessageSearch
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        channel={selectedChannel}
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        results={searchResults}
+        loading={searchLoading}
+        error={searchError}
+        onSelectResult={handleSearchResultSelect}
+      />
+{loadingWorkspaces || loadingChannels ? (
           <div className="flex flex-1 items-center justify-center">
             <div className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-500/20 border-t-indigo-500" />
           </div>
@@ -857,6 +1030,7 @@ const handleReactMessage = async (messageId, emoji) => {
                 typingUsers={typingUsers}
               members={workspaceMembers}
                 currentUserId={currentUserId}
+               highlightMessageId={highlightMessageId}
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
                 onReplyMessage={setReplyToMessage}
@@ -896,6 +1070,11 @@ const handleReactMessage = async (messageId, emoji) => {
     </div>
   );
 }
+
+
+
+
+
 
 
 
