@@ -1,4 +1,4 @@
-import { Server } from "socket.io";
+﻿import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
@@ -104,7 +104,7 @@ export const initializeSocketServer = (httpServer) => {
     // SEND MESSAGE
     socket.on("message:send", async (payload, callback) => {
       try {
-        const { channelId, content, replyTo, mentionIds } = payload || {};
+        const { channelId, content, replyTo, mentionIds, attachments } = payload || {};
 
         const message = await createMessage({
           channelId,
@@ -112,6 +112,7 @@ export const initializeSocketServer = (httpServer) => {
           content,
           replyTo,
           mentionIds,
+        attachments,
         });
 
         io.to(`channel:${channelId}`).emit("message:new", message);
@@ -245,3 +246,4 @@ export const getIO = () => {
 
   return io;
 };
+

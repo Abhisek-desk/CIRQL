@@ -11,6 +11,8 @@ export const sendMessage = async (req, res, next) => {
       senderId: req.user._id,
       content: req.body.content,
       replyTo: req.body.replyTo || null,
+      mentionIds: req.body.mentionIds || [],
+      attachments: req.body.attachments || [],
     });
 
     return res.status(201).json({
@@ -372,4 +374,5 @@ export const deleteMessage = async (req, res, next) => {
     next(error);
   }
 };
+
 
