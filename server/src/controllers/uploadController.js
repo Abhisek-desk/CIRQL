@@ -1,4 +1,4 @@
-import cloudinary from "../config/cloudinary.js";
+﻿import cloudinary from "../config/cloudinary.js";
 
 export const uploadFile = async (req, res, next) => {
   try {
@@ -9,11 +9,20 @@ export const uploadFile = async (req, res, next) => {
       });
     }
 
+    const originalName = req.file.originalname
+      .replace(/[\/\\]/g, "_")
+      .slice(0, 255);
+
+    const isImage = req.file.mimetype.startsWith("image/");
+
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
-          folder: "cirql",
-          resource_type: "auto",
+          folder: "cirql/attachments",
+          resource_type: isImage ? "image" : "raw",
+          use_filename: true,
+          unique_filename: true,
+          filename_override: originalName,
         },
         (error, uploadedFile) => {
           if (error) {
@@ -33,9 +42,11 @@ export const uploadFile = async (req, res, next) => {
       file: {
         url: result.secure_url,
         publicId: result.public_id,
-        format: result.format,
+        name: originalName,
+        format: result.format || "",
         size: result.bytes,
         resourceType: result.resource_type,
+        mimeType: req.file.mimetype,
       },
     });
   } catch (error) {
