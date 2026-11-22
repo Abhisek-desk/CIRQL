@@ -9,11 +9,17 @@ export default function ChatMessages({
   typingUsers = [],
   channel,
   currentUserId,
+  onEditMessage,
+  onDeleteMessage,
+  onReplyMessage,
+  onReactMessage,
 }) {
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
   }, [messages, typingUsers]);
 
   const channelName = channel?.name || "channel";
@@ -52,6 +58,11 @@ export default function ChatMessages({
               key={message._id || message.id}
               message={message}
               isOwn={Boolean(isOwn)}
+              currentUserId={currentUserId}
+              onEdit={onEditMessage}
+              onDelete={onDeleteMessage}
+              onReply={onReplyMessage}
+              onReact={onReactMessage}
             />
           );
         })}

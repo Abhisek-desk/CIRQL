@@ -1,11 +1,13 @@
 ﻿import { useState } from "react";
-import { motion } from "motion/react";
-import { Paperclip, Smile, Send, Plus } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { Paperclip, Smile, Send, Plus, X, CornerUpLeft } from "lucide-react";
 
 export default function MessageComposer({
   onSend,
   onTypingChange,
   channelName = "channel",
+  replyTo,
+  onCancelReply,
 }) {
   const [message, setMessage] = useState("");
 
@@ -13,17 +15,15 @@ export default function MessageComposer({
     event.preventDefault();
 
     const content = message.trim();
-
     if (!content) return;
 
     onTypingChange?.(false);
-    onSend?.(content);
+    onSend?.(content, replyTo?._id || null);
     setMessage("");
   };
 
   const handleChange = (event) => {
     const value = event.target.value;
-
     setMessage(value);
     onTypingChange?.(Boolean(value.trim()));
   };
@@ -35,6 +35,43 @@ export default function MessageComposer({
     >
       <div className="mx-auto max-w-4xl">
         <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm transition-all focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10">
+
+          <AnimatePresence>
+            {replyTo && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center justify-between border-b border-[var(--border)] bg-indigo-500/5 px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <CornerUpLeft size={17} className="shrink-0 text-indigo-500" />
+
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-indigo-500">
+                        Replying to {replyTo.sender?.name || "User"}
+                      </p>
+
+                      <p className="truncate text-xs text-[var(--muted)]">
+                        {replyTo.content}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={onCancelReply}
+                    aria-label="Cancel reply"
+                    className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="flex items-center gap-2 px-3 pt-3 sm:px-4">
             <button
               type="button"
@@ -56,6 +93,7 @@ export default function MessageComposer({
               }}
               placeholder={`Message #${channelName}...`}
               rows={1}
+              maxLength={5000}
               className="max-h-32 min-h-10 min-w-0 flex-1 resize-none bg-transparent py-2.5 text-sm leading-6 text-[var(--text)] outline-none placeholder:text-[var(--muted)]"
             />
           </div>

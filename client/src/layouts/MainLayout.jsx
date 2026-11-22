@@ -27,6 +27,7 @@ export default function MainLayout() {
   const [selectedChannel, setSelectedChannel] = useState(null);
 
   const [messages, setMessages] = useState([]);
+  const [replyToMessage, setReplyToMessage] = useState(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -210,6 +211,54 @@ export default function MainLayout() {
       });
     };
 
+    const handleMessageUpdated = (updatedMessage) => {
+      if (!active) return;
+
+      const incomingChannelId =
+        updatedMessage.channel?._id || updatedMessage.channel;
+
+      if (String(incomingChannelId) !== String(channelId)) return;
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(updatedMessage._id)
+            ? updatedMessage
+            : message,
+        ),
+      );
+    };
+
+    const handleMessageDeleted = (deletedMessage) => {
+      if (!active) return;
+
+      const incomingChannelId =
+        deletedMessage.channel?._id || deletedMessage.channel;
+
+      if (String(incomingChannelId) !== String(channelId)) return;
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(deletedMessage._id)
+            ? { ...message, ...deletedMessage }
+            : message,
+        ),
+      );
+    };
+
+    const handleMessageReactions = (payload) => {
+  if (!active) return;
+
+  if (String(payload?.channelId) !== String(channelId)) return;
+
+  setMessages((previous) =>
+    previous.map((message) =>
+      String(message._id) === String(payload.messageId)
+        ? { ...message, reactions: payload.reactions }
+        : message,
+    ),
+  );
+};
+
     const handleTypingStart = (payload) => {
       console.log("RECEIVED TYPING START:", payload);
       if (!active || String(payload?.channelId) !== String(channelId)) return;
@@ -243,8 +292,11 @@ export default function MainLayout() {
     };
 
     socket.on("message:new", handleNewMessage);
+    socket.on("message:updated", handleMessageUpdated);
+    socket.on("message:deleted", handleMessageDeleted);
     socket.on("typing:start", handleTypingStart);
     socket.on("typing:stop", handleTypingStop);
+    socket.on("message:reactions", handleMessageReactions);
 
     const loadHistory = async () => {
       try {
@@ -310,9 +362,12 @@ export default function MainLayout() {
       isTypingRef.current = false;
 
       socket.off("message:new", handleNewMessage);
+      socket.off("message:updated", handleMessageUpdated);
+      socket.off("message:deleted", handleMessageDeleted);
       socket.off("typing:start", handleTypingStart);
       socket.off("typing:stop", handleTypingStop);
       socket.off("connect", joinChannel);
+      socket.on("message:reactions", handleMessageReactions);
 
       if (socket.connected) {
         socket.emit("channel:leave", channelId);
@@ -359,7 +414,7 @@ export default function MainLayout() {
   };
 
   // SEND MESSAGE
-  const handleSendMessage = (content) => {
+  const handleSendMessage = (content, replyTo = null) => {
     if (!selectedChannel?._id) return;
 
     handleTypingChange(false);
@@ -376,14 +431,99 @@ export default function MainLayout() {
       {
         channelId: selectedChannel._id,
         content,
+        replyTo,
       },
       (response) => {
         if (!response?.success) {
           toast.error(response?.message || "Message could not be sent");
+          return;
         }
+
+        setReplyToMessage(null);
       },
     );
   };
+
+  // EDIT MESSAGE
+  const handleEditMessage = async (messageId, content) => {
+    try {
+      const updatedMessage = await messageService.editMessage(
+        messageId,
+        content,
+      );
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(messageId) ? updatedMessage : message,
+        ),
+      );
+
+      const socket = connectSocket(token);
+
+      if (socket?.connected) {
+        socket.emit("message:updated", messageId);
+      }
+
+      toast.success("Message updated");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Could not edit message");
+      throw error;
+    }
+  };
+
+  // DELETE MESSAGE
+  const handleDeleteMessage = async (messageId) => {
+    try {
+      await messageService.deleteMessage(messageId);
+
+      const deletedAt = new Date().toISOString();
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(messageId)
+            ? {
+                ...message,
+                content: "This message was deleted",
+                deletedAt,
+              }
+            : message,
+        ),
+      );
+
+      const socket = connectSocket(token);
+
+      if (socket?.connected) {
+        socket.emit("message:deleted", messageId);
+      }
+
+      toast.success("Message deleted");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Could not delete message");
+    }
+  };
+
+  // TOGGLE MESSAGE REACTION
+const handleReactMessage = async (messageId, emoji) => {
+  try {
+    const response = await messageService.toggleReaction(
+      messageId,
+      emoji,
+    );
+
+    // Update the current user's UI immediately.
+    setMessages((previous) =>
+      previous.map((message) =>
+        String(message._id) === String(messageId)
+          ? { ...message, reactions: response.reactions }
+          : message,
+      ),
+    );
+  } catch (error) {
+    toast.error(
+      error.response?.data?.message || "Could not update reaction",
+    );
+  }
+};
 
   const handleSelectWorkspace = (workspace) => {
     setSelectedWorkspace(workspace);
@@ -392,6 +532,7 @@ export default function MainLayout() {
 
   const handleSelectChannel = (channel) => {
     setSelectedChannel(channel);
+    setReplyToMessage(null);
     setMobileMenuOpen(false);
   };
 
@@ -509,6 +650,10 @@ export default function MainLayout() {
                 channel={selectedChannel}
                 typingUsers={typingUsers}
                 currentUserId={currentUserId}
+                onEditMessage={handleEditMessage}
+                onDeleteMessage={handleDeleteMessage}
+                onReplyMessage={setReplyToMessage}
+                onReactMessage={handleReactMessage}
               />
             )}
 
@@ -517,6 +662,8 @@ export default function MainLayout() {
               channelName={selectedChannel.name}
               onSend={handleSendMessage}
               onTypingChange={handleTypingChange}
+              replyTo={replyToMessage}
+              onCancelReply={() => setReplyToMessage(null)}
             />
           </>
         )}

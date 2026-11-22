@@ -11,6 +11,8 @@ import {
   getOnlineUsers,
 } from "../services/presenceService.js";
 
+import Message from "../models/Message.js";
+
 let io;
 
 export const initializeSocketServer = (httpServer) => {
@@ -30,10 +32,7 @@ export const initializeSocketServer = (httpServer) => {
         return next(new Error("Authentication required"));
       }
 
-      const decoded = jwt.verify(
-        token,
-        process.env.JWT_ACCESS_SECRET
-      );
+      const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 
       const user = await User.findById(decoded.sub);
 
@@ -66,10 +65,7 @@ export const initializeSocketServer = (httpServer) => {
     // JOIN CHANNEL
     socket.on("channel:join", async (channelId, callback) => {
       try {
-        const access = await getAccessibleChannel(
-          channelId,
-          socket.user._id
-        );
+        const access = await getAccessibleChannel(channelId, socket.user._id);
 
         if (!access) {
           return callback?.({
@@ -109,10 +105,7 @@ export const initializeSocketServer = (httpServer) => {
           replyTo,
         });
 
-        io.to(`channel:${channelId}`).emit(
-          "message:new",
-          message
-        );
+        io.to(`channel:${channelId}`).emit("message:new", message);
 
         callback?.({
           success: true,
@@ -126,24 +119,66 @@ export const initializeSocketServer = (httpServer) => {
       }
     });
 
-    // TYPING START
-    socket.on("typing:start", async (channelId) => {
+    // MESSAGE UPDATED BROADCAST
+    socket.on("message:updated", async (messageId) => {
       try {
+        const message = await Message.findById(messageId).populate(
+          "sender",
+          "name email avatar",
+        );
+
+        if (!message || message.deletedAt) return;
+
         const access = await getAccessibleChannel(
-          channelId,
-          socket.user._id
+          message.channel,
+          socket.user._id,
         );
 
         if (!access) return;
 
-        socket.to(`channel:${channelId}`).emit(
-          "typing:start",
-          {
-            userId,
-            name: socket.user.name,
-            channelId,
-          }
+        io.to(`channel:${message.channel}`).emit("message:updated", message);
+      } catch (error) {
+        console.error("Message update broadcast error:", error.message);
+      }
+    });
+
+    // MESSAGE DELETED BROADCAST
+    socket.on("message:deleted", async (messageId) => {
+      try {
+        const message = await Message.findById(messageId);
+
+        if (!message || !message.deletedAt) return;
+
+        const access = await getAccessibleChannel(
+          message.channel,
+          socket.user._id,
         );
+
+        if (!access) return;
+
+        io.to(`channel:${message.channel}`).emit("message:deleted", {
+          _id: message._id,
+          channel: message.channel,
+          content: message.content,
+          deletedAt: message.deletedAt,
+        });
+      } catch (error) {
+        console.error("Message delete broadcast error:", error.message);
+      }
+    });
+
+    // TYPING START
+    socket.on("typing:start", async (channelId) => {
+      try {
+        const access = await getAccessibleChannel(channelId, socket.user._id);
+
+        if (!access) return;
+
+        socket.to(`channel:${channelId}`).emit("typing:start", {
+          userId,
+          name: socket.user.name,
+          channelId,
+        });
       } catch (error) {
         console.error("Typing start error:", error.message);
       }
@@ -152,20 +187,14 @@ export const initializeSocketServer = (httpServer) => {
     // TYPING STOP
     socket.on("typing:stop", async (channelId) => {
       try {
-        const access = await getAccessibleChannel(
-          channelId,
-          socket.user._id
-        );
+        const access = await getAccessibleChannel(channelId, socket.user._id);
 
         if (!access) return;
 
-        socket.to(`channel:${channelId}`).emit(
-          "typing:stop",
-          {
-            userId,
-            channelId,
-          }
-        );
+        socket.to(`channel:${channelId}`).emit("typing:stop", {
+          userId,
+          channelId,
+        });
       } catch (error) {
         console.error("Typing stop error:", error.message);
       }
@@ -173,10 +202,7 @@ export const initializeSocketServer = (httpServer) => {
 
     // DISCONNECT
     socket.on("disconnect", () => {
-      const wentOffline = removeOnlineUser(
-        userId,
-        socket.id
-      );
+      const wentOffline = removeOnlineUser(userId, socket.id);
 
       if (wentOffline) {
         io.emit("presence:offline", {

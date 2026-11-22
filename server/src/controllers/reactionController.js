@@ -1,15 +1,22 @@
 import mongoose from "mongoose";
 import Message from "../models/Message.js";
 import { getAccessibleChannel } from "../services/channelAccess.js";
+import { getIO } from "../sockets/socket.js";
 
-const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "🚀"];
+const ALLOWED_EMOJIS = [
+  "\u{1F44D}",       // 👍
+  "\u2764\uFE0F",    // ❤️
+  "\u{1F602}",       // 😂
+  "\u{1F389}",       // 🎉
+  "\u{1F440}",       // 👀
+  "\u{1F680}",       // 🚀
+];
 
 export const toggleReaction = async (req, res, next) => {
   try {
     const { messageId } = req.params;
     const { emoji } = req.body;
 
-    // Validate message ID
     if (!mongoose.Types.ObjectId.isValid(messageId)) {
       return res.status(400).json({
         success: false,
@@ -17,7 +24,6 @@ export const toggleReaction = async (req, res, next) => {
       });
     }
 
-    // Validate emoji
     if (!ALLOWED_EMOJIS.includes(emoji)) {
       return res.status(400).json({
         success: false,
@@ -25,7 +31,6 @@ export const toggleReaction = async (req, res, next) => {
       });
     }
 
-    // Find message
     const message = await Message.findById(messageId);
 
     if (!message || message.deletedAt) {
@@ -35,10 +40,9 @@ export const toggleReaction = async (req, res, next) => {
       });
     }
 
-    // Check channel access
     const access = await getAccessibleChannel(
       message.channel,
-      req.user._id
+      req.user._id,
     );
 
     if (!access) {
@@ -48,39 +52,48 @@ export const toggleReaction = async (req, res, next) => {
       });
     }
 
-    // Ensure reactions array exists for older messages
     if (!Array.isArray(message.reactions)) {
       message.reactions = [];
     }
 
-    // Find existing reaction from this user
     const existingIndex = message.reactions.findIndex(
       (reaction) =>
         reaction.user.toString() === req.user._id.toString() &&
-        reaction.emoji === emoji
+        reaction.emoji === emoji,
     );
 
-    let action;
+    const action = existingIndex !== -1 ? "removed" : "added";
 
     if (existingIndex !== -1) {
-      // Remove reaction if already added
       message.reactions.splice(existingIndex, 1);
-      action = "removed";
     } else {
-      // Add new reaction
       message.reactions.push({
         user: req.user._id,
         emoji,
       });
-      action = "added";
     }
 
     await message.save();
 
+    const reactions = message.reactions.map((reaction) => ({
+      user: reaction.user.toString(),
+      emoji: reaction.emoji,
+    }));
+
+    const payload = {
+      messageId: message._id.toString(),
+      channelId: message.channel.toString(),
+      reactions,
+    };
+
+    getIO()
+      .to(`channel:${message.channel}`)
+      .emit("message:reactions", payload);
+
     return res.status(200).json({
       success: true,
       message: `Reaction ${action} successfully`,
-      reactions: message.reactions,
+      reactions,
     });
   } catch (error) {
     next(error);
