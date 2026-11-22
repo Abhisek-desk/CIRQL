@@ -79,6 +79,38 @@ export default function ChatMessages({
     return () => clearTimeout(timer);
   }, [highlightedId]);
 
+  useEffect(() => {
+  const debugData = {
+    currentUserId,
+
+    readStates: channelReadStates.map((state) => ({
+      userId: String(state.user?._id || state.user),
+      lastReadAt: state.lastReadAt,
+      timestamp: new Date(state.lastReadAt).getTime(),
+    })),
+
+    messages: messages.slice(-5).map((message) => {
+      const senderId =
+        message.sender?._id ||
+        message.sender?.id ||
+        message.sender;
+
+      return {
+        id: String(message._id || message.id),
+        senderId: String(senderId),
+        isOwn: String(senderId) === String(currentUserId),
+        createdAt: message.createdAt,
+        timestamp: new Date(message.createdAt).getTime(),
+      };
+    }),
+  };
+
+  console.log(
+    "[RECEIPT DEBUG - FULL DATA]\n",
+    JSON.stringify(debugData, null, 2)
+  );
+}, [currentUserId, channelReadStates, messages]);
+
   const channelName = channel?.name || "channel";
   const typingNames = typingUsers.map((item) => item.name);
 
@@ -186,6 +218,8 @@ export default function ChatMessages({
     </div>
   );
 }
+
+
 
 
 

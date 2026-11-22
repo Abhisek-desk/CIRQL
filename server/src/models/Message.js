@@ -1,4 +1,40 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
+
+const attachmentSchema = new mongoose.Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+    },
+    publicId: {
+      type: String,
+      required: true,
+    },
+    name: {
+      type: String,
+      required: true,
+      maxlength: 255,
+    },
+    format: {
+      type: String,
+      default: "",
+    },
+    size: {
+      type: Number,
+      required: true,
+    },
+    resourceType: {
+      type: String,
+      enum: ["image", "raw", "video"],
+      default: "raw",
+    },
+    mimeType: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: true }
+);
 
 const messageSchema = new mongoose.Schema(
   {
@@ -17,9 +53,18 @@ const messageSchema = new mongoose.Schema(
 
     content: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
       maxlength: 5000,
+    },
+
+    attachments: {
+      type: [attachmentSchema],
+      default: [],
+      validate: {
+        validator: (attachments) => attachments.length <= 5,
+        message: "A message can contain at most 5 attachments",
+      },
     },
 
     replyTo: {
@@ -49,7 +94,7 @@ const messageSchema = new mongoose.Schema(
           emoji: {
             type: String,
             required: true,
-            enum: ["👍", "❤️", "😂", "🎉", "👀", "🚀"],
+            enum: ["ðŸ‘", "â", "ðŸ˜‚", "ðŸŽ‰", "ðŸ‘€", "ðŸš€"],
           },
         },
       ],

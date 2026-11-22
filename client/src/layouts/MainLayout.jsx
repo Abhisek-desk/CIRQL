@@ -76,7 +76,7 @@ export default function MainLayout() {
           replyTo:
             message.replyTo && typeof message.replyTo === "object"
               ? message.replyTo
-              : updatedMessage.replyTo ?? message.replyTo,
+              : (updatedMessage.replyTo ?? message.replyTo),
           reactions: Array.isArray(updatedMessage.reactions)
             ? updatedMessage.reactions
             : message.reactions,
@@ -258,7 +258,7 @@ export default function MainLayout() {
       if (!notification.isRead) {
         setUnreadCount((previous) => previous + 1);
         toast("New notification", {
-          icon: "ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚Â",
+          icon: "\uD83D\uDD14",
         });
 
         const notificationChannel = notification.channel;
@@ -266,8 +266,7 @@ export default function MainLayout() {
           notificationChannel?._id || notificationChannel;
 
         const notificationWorkspaceId =
-          notificationChannel?.workspace?._id ||
-          notificationChannel?.workspace;
+          notificationChannel?.workspace?._id || notificationChannel?.workspace;
 
         const activeWorkspaceId = selectedWorkspaceRef.current?._id;
         const activeChannelId = selectedChannelRef.current?._id;
@@ -279,8 +278,7 @@ export default function MainLayout() {
         ) {
           setChannelUnreadCounts((previous) => ({
             ...previous,
-            [notificationChannelId]:
-              (previous[notificationChannelId] || 0) + 1,
+            [notificationChannelId]: (previous[notificationChannelId] || 0) + 1,
           }));
         }
       }
@@ -464,7 +462,7 @@ export default function MainLayout() {
 
       try {
         const counts = await readStateService.getUnreadCounts(
-          selectedWorkspace._id
+          selectedWorkspace._id,
         );
 
         if (!active) return;
@@ -490,43 +488,55 @@ export default function MainLayout() {
     };
   }, [selectedWorkspace?._id]);
 
-  // MARK THE ACTIVE CHANNEL AS READ
+  // MARK ACTIVE CHANNEL AS READ
   useEffect(() => {
     const channelId = selectedChannel?._id;
 
     if (!channelId) return;
 
-    setChannelUnreadCounts((previous) => ({
-      ...previous,
-      [channelId]: 0,
-    }));
-
-    setFirstUnreadMessageId(null);
-
     let active = true;
 
     const markAsRead = async () => {
+      if (document.visibilityState !== "visible") return;
+
       try {
         const result = await readStateService.markChannelAsRead(channelId);
 
-        if (active) {
-          setFirstUnreadMessageId(
-            result.firstUnreadMessageId
-              ? String(result.firstUnreadMessageId)
-              : null
-          );
-        }
+        if (!active) return;
+
+        setChannelUnreadCounts((previous) => ({
+          ...previous,
+          [channelId]: 0,
+        }));
+
+        setFirstUnreadMessageId(
+          result.firstUnreadMessageId
+            ? String(result.firstUnreadMessageId)
+            : null,
+        );
       } catch (error) {
-        if (active) {
-          console.error("Could not mark channel as read:", error);
-        }
+        console.error("Could not mark channel as read:", error);
       }
     };
 
+    // Mark read immediately when opening the channel.
     markAsRead();
+
+    // Mark read when returning to the browser tab.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        markAsRead();
+      }
+    };
+
+    // Mark read when the browser window receives focus.
+    window.addEventListener("focus", markAsRead);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       active = false;
+      window.removeEventListener("focus", markAsRead);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [selectedChannel?._id]);
 
@@ -599,21 +609,25 @@ export default function MainLayout() {
 
         return [...previous, message];
       });
+
+      if (document.visibilityState === "visible" && document.hasFocus()) {
+        readStateService.markChannelAsRead(channelId).catch((error) => {
+          console.error("Could not update channel read state:", error);
+        });
+      }
     };
 
-  const handleMessageUpdated = (updatedMessage) => {
-    if (!active) return;
+    const handleMessageUpdated = (updatedMessage) => {
+      if (!active) return;
 
-    const incomingChannelId =
-      updatedMessage.channel?._id || updatedMessage.channel;
+      const incomingChannelId =
+        updatedMessage.channel?._id || updatedMessage.channel;
 
-    if (String(incomingChannelId) !== String(channelId)) return;
+      if (String(incomingChannelId) !== String(channelId)) return;
 
-    setMessages((previous) =>
-      applyMessageUpdate(previous, updatedMessage),
-    );
-  };
-  const handleMessageDeleted = (deletedMessage) => {
+      setMessages((previous) => applyMessageUpdate(previous, updatedMessage));
+    };
+    const handleMessageDeleted = (deletedMessage) => {
       if (!active) return;
 
       const incomingChannelId =
@@ -647,13 +661,13 @@ export default function MainLayout() {
     const handleChannelRead = (payload) => {
       if (!active) return;
       if (String(payload?.channelId) !== String(channelId)) return;
+      console.log("[RECEIPT DEBUG] Socket event:", payload);
       if (!payload?.user?._id || !payload?.lastReadAt) return;
 
       setChannelReadStates((previous) => {
         const existing = previous.filter(
           (item) =>
-            String(item.user?._id || item.user) !==
-            String(payload.user._id)
+            String(item.user?._id || item.user) !== String(payload.user._id),
         );
 
         return [
@@ -712,7 +726,8 @@ export default function MainLayout() {
         ]);
 
         if (!active) return;
-
+        console.log("[RECEIPT DEBUG] Channel:", channelId);
+        console.log("[RECEIPT DEBUG] API read states:", readStates);
         setChannelReadStates(readStates);
 
         setMessages((previous) => {
@@ -1319,7 +1334,7 @@ export default function MainLayout() {
             ) : (
               <ChatMessages
                 messages={messages}
-              channelReadStates={channelReadStates}
+                channelReadStates={channelReadStates}
                 channel={selectedChannel}
                 firstUnreadMessageId={firstUnreadMessageId}
                 typingUsers={typingUsers}
@@ -1329,7 +1344,7 @@ export default function MainLayout() {
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
                 onReplyMessage={setReplyToMessage}
-              onJumpToMessage={handleReplyPreviewClick}
+                onJumpToMessage={handleReplyPreviewClick}
                 onReactMessage={handleReactMessage}
               />
             )}
@@ -1366,8 +1381,3 @@ export default function MainLayout() {
     </div>
   );
 }
-
-
-
-
-
