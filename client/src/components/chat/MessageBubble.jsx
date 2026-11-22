@@ -1,5 +1,5 @@
-﻿import { useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+﻿import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, m as motion } from "motion/react";
 import {
   Smile,
   Reply,
@@ -11,10 +11,13 @@ import {
   Loader2,
   Eye,
   FileText,
-  Download
+  Download,
+  Copy,
+  Link,
+  CheckCheck
 } from "lucide-react";
 
-const EMOJIS = ["👍", "❤️", "😂", "🎉", "👀", "🚀"];
+const EMOJIS = ["??", "??", "??", "??", "??", "??"];
 
 const formatFileSize = (bytes = 0) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -33,6 +36,7 @@ export default function MessageBubble({
   onEdit,
   onDelete,
   onReply,
+  onJumpToMessage,
   onReact,
   currentUserId,
   members = [],
@@ -105,7 +109,62 @@ export default function MessageBubble({
   const [deleting, setDeleting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [copiedAction, setCopiedAction] = useState("");
+  const moreMenuRef = useRef(null);
 
+  useEffect(() => {
+    if (!moreOpen) return;
+
+    const handleOutsideClick = (event) => {
+      if (!moreMenuRef.current?.contains(event.target)) {
+        setMoreOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") setMoreOpen(false);
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [moreOpen]);
+
+  const copyText = async (value, action) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedAction(action);
+      setTimeout(() => setCopiedAction(""), 1600);
+      setMoreOpen(false);
+    } catch {
+      window.prompt("Copy this text:", value);
+      setMoreOpen(false);
+    }
+  };
+
+  const handleCopyMessage = () => {
+    const attachmentNames = attachments
+      .map((file) => file.name)
+      .filter(Boolean);
+
+    const text = [
+      content,
+      ...attachmentNames.map((name) => `[Attachment: ${name}]`),
+    ].filter(Boolean).join("\n");
+
+    if (text) copyText(text, "message");
+  };
+
+  const handleCopyLink = () => {
+    const url = new URL(window.location.href);
+    url.hash = `message-${message._id}`;
+    copyText(url.toString(), "link");
+  };
   const date = message.createdAt ? new Date(message.createdAt) : null;
 
   const time =
@@ -255,10 +314,11 @@ export default function MessageBubble({
   };
   return (
     <motion.div
+      id={`message-${message._id}`}
       initial={{ opacity: 0, y: 12, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.22 }}
-      className={`group flex gap-3 px-4 py-3 transition-colors hover:bg-[var(--surface)]/50 ${
+      className={`group flex gap-2.5 px-3 py-2.5 transition-colors sm:gap-3 sm:px-4 sm:py-3 hover:bg-[var(--surface)]/50 ${
         isOwn ? "flex-row-reverse" : ""
       }`}
     >
@@ -276,11 +336,11 @@ export default function MessageBubble({
 
       <div className={`min-w-0 max-w-[85%] md:max-w-[75%] ${isOwn ? "text-right" : ""}`}>
         <div className={`mb-1 flex flex-wrap items-center gap-2 ${isOwn ? "justify-end" : ""}`}>
-          <span className="text-sm font-semibold text-[var(--text)]">
+          <span className="text-[13px] font-semibold text-[var(--text)] sm:text-sm">
             {name}
           </span>
 
-          <span className="text-xs text-[var(--muted)]">{time}</span>
+          <span className="text-[11px] text-[var(--muted)] sm:text-xs">{time}</span>
 
           {message.editedAt && !isDeleted && (
             <span className="text-[10px] text-[var(--muted)]">
@@ -354,7 +414,7 @@ export default function MessageBubble({
           ) : (
             <motion.div
               key="content"
-              className={`rounded-2xl px-4 py-3 text-left text-sm leading-6 ${
+              className={`rounded-2xl px-3 py-2.5 text-left text-[13px] leading-5 sm:px-4 sm:py-3 sm:text-sm sm:leading-6 ${
                 isDeleted
                   ? "rounded-tl-sm border border-[var(--border)] bg-[var(--surface)] italic text-[var(--muted)]"
                   : isOwn
@@ -531,19 +591,109 @@ export default function MessageBubble({
               </>
             )}
 
-            <button
-              type="button"
-              aria-label="More message options"
-              className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface-hover)]"
-            >
-              <MoreHorizontal size={15} />
-            </button>
+            <div className="relative" ref={moreMenuRef}>
+              <button
+                type="button"
+                onClick={() => setMoreOpen((value) => !value)}
+                aria-label="More message options"
+                aria-expanded={moreOpen}
+                aria-haspopup="menu"
+                title="More options"
+                className={`rounded-lg p-2 transition ${
+                  moreOpen
+                    ? "bg-[var(--surface-hover)] text-indigo-500"
+                    : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-indigo-500"
+                }`}
+              >
+                <MoreHorizontal size={15} />
+              </button>
+
+              <AnimatePresence>
+                {moreOpen && (
+                  <motion.div
+                    role="menu"
+                    initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute bottom-full right-0 z-50 mb-2 w-52 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1.5 text-left shadow-2xl"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleCopyMessage}
+                      disabled={!content && attachments.length === 0}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {copiedAction === "message" ? (
+                        <CheckCheck size={15} className="text-emerald-500" />
+                      ) : (
+                        <Copy size={15} className="text-[var(--muted)]" />
+                      )}
+                      {copiedAction === "message" ? "Copied!" : "Copy message"}
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleCopyLink}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
+                    >
+                      {copiedAction === "link" ? (
+                        <CheckCheck size={15} className="text-emerald-500" />
+                      ) : (
+                        <Link size={15} className="text-[var(--muted)]" />
+                      )}
+                      {copiedAction === "link" ? "Link copied!" : "Copy message link"}
+                    </button>
+
+                    {isOwn && !isDeleted && (
+                      <>
+                        <div className="my-1 border-t border-[var(--border)]" />
+
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setEditContent(content);
+                            setEditing(true);
+                            setMoreOpen(false);
+                          }}
+                          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
+                        >
+                          <Pencil size={15} className="text-[var(--muted)]" />
+                          Edit message
+                        </button>
+
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setMoreOpen(false);
+                            handleDelete();
+                          }}
+                          disabled={deleting || saving}
+                          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium text-red-500 transition hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          <Trash2 size={15} />
+                          Delete message
+                        </button>
+                      </>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         )}
       </div>
     </motion.div>
   );
 }
+
+
+
+
 
 
 

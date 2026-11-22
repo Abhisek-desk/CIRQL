@@ -1,4 +1,4 @@
-﻿import { motion } from "motion/react";
+﻿import { m as motion } from "motion/react";
 
 export default function TypingIndicator({ names = [] }) {
   if (!names.length) return null;

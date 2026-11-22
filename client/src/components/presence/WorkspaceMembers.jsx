@@ -1,4 +1,4 @@
-﻿import { motion } from "motion/react";
+﻿import { m as motion } from "motion/react";
 import { Users, Circle } from "lucide-react";
 import PresenceIndicator from "./PresenceIndicator";
 
@@ -142,3 +142,4 @@ export default function WorkspaceMembers({
     </div>
   );
 }
+

@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { useDispatch } from "react-redux";
-import { motion, AnimatePresence } from "motion/react";
+import { m as motion, AnimatePresence } from "motion/react";
 import {
   LogOut,
   ChevronUp,
@@ -267,3 +267,4 @@ export default function ProfileMenu({ user }) {
     </div>
   );
 }
+

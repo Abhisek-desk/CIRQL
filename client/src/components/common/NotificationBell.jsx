@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, m as motion } from "motion/react";
 import {
   Bell,
   Check,
@@ -96,7 +96,7 @@ export default function NotificationBell({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.97 }}
             transition={{ duration: 0.18 }}
-            className="absolute right-0 top-12 z-[80] flex max-h-[min(520px,75dvh)] w-[min(360px,calc(100vw-24px))] flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)] shadow-2xl"
+            className="fixed left-3 right-3 top-16 z-[80] flex max-h-[min(520px,calc(100dvh-5.5rem))] w-auto flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)] shadow-2xl sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:max-h-[min(520px,75dvh)] sm:w-[min(360px,calc(100vw-24px))]"
           >
             <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
               <div>
@@ -258,3 +258,5 @@ export default function NotificationBell({
     </div>
   );
 }
+
+

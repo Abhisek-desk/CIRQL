@@ -1,4 +1,4 @@
-﻿import { motion } from "motion/react";
+﻿import { m as motion } from "motion/react";
 
 export default function PresenceIndicator({
   online = false,
@@ -25,3 +25,4 @@ export default function PresenceIndicator({
     </span>
   );
 }
+

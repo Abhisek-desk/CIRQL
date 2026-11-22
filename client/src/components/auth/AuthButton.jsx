@@ -1,4 +1,4 @@
-﻿import { motion } from "motion/react";
+﻿import { m as motion } from "motion/react";
 import { LoaderCircle, ArrowRight } from "lucide-react";
 
 export default function AuthButton({ children, loading, ...props }) {
@@ -24,3 +24,4 @@ export default function AuthButton({ children, loading, ...props }) {
     </motion.button>
   );
 }
+

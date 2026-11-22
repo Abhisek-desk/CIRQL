@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, m as motion } from "motion/react";
 import {
   Paperclip,
   Smile,
@@ -9,7 +9,6 @@ import {
   CornerUpLeft,
   AtSign,
   FileText,
-  Image as ImageIcon,
   Upload,
 } from "lucide-react";
 
@@ -52,17 +51,31 @@ export default function MessageComposer({
   const [selectedMentions, setSelectedMentions] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [fileError, setFileError] = useState("");
+  const [sendError, setSendError] = useState("");
+  const [sending, setSending] = useState(false);
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const previewUrlsRef = useRef(new Set());
+
+  const revokePreviewUrl = (url) => {
+    if (!url) return;
+
+    URL.revokeObjectURL(url);
+    previewUrlsRef.current.delete(url);
+  };
 
   useEffect(() => {
+    const previewUrls = previewUrlsRef.current;
+
     return () => {
-      selectedFiles.forEach((item) => {
-        if (item.preview) URL.revokeObjectURL(item.preview);
+      previewUrls.forEach((url) => {
+        URL.revokeObjectURL(url);
       });
+
+      previewUrls.clear();
     };
-  }, [selectedFiles]);
+  }, []);
 
   const filteredMembers = useMemo(() => {
     if (!mentionQuery) return [];
@@ -176,12 +189,18 @@ export default function MessageComposer({
         continue;
       }
 
+      const preview = file.type.startsWith("image/")
+        ? URL.createObjectURL(file)
+        : null;
+
+      if (preview) {
+        previewUrlsRef.current.add(preview);
+      }
+
       validFiles.push({
         id: `${file.name}-${file.lastModified}-${Math.random()}`,
         file,
-        preview: file.type.startsWith("image/")
-          ? URL.createObjectURL(file)
-          : null,
+        preview,
       });
     }
 
@@ -194,15 +213,15 @@ export default function MessageComposer({
   };
 
   const handleRemoveFile = (id) => {
-    setSelectedFiles((previous) => {
-      const target = previous.find((item) => item.id === id);
+    const target = selectedFiles.find((item) => item.id === id);
 
-      if (target?.preview) {
-        URL.revokeObjectURL(target.preview);
-      }
+    if (target?.preview) {
+      revokePreviewUrl(target.preview);
+    }
 
-      return previous.filter((item) => item.id !== id);
-    });
+    setSelectedFiles((previous) =>
+      previous.filter((item) => item.id !== id),
+    );
 
     setFileError("");
   };
@@ -212,7 +231,11 @@ export default function MessageComposer({
 
     const content = message.trim();
 
-    if ((!content && selectedFiles.length === 0) || uploading) {
+    if (
+      (!content && selectedFiles.length === 0) ||
+      uploading ||
+      sending
+    ) {
       return;
     }
 
@@ -227,24 +250,41 @@ export default function MessageComposer({
     const files = selectedFiles.map((item) => item.file);
 
     onTypingChange?.(false);
+    setSendError("");
+    setSending(true);
 
-    await onSend?.(
-      content,
-      replyTo?._id || null,
-      mentionIds,
-      files,
-    );
+    try {
+      const result = await onSend?.(
+        content,
+        replyTo?._id || null,
+        mentionIds,
+        files,
+      );
 
-    setMessage("");
-    setSelectedMentions([]);
-    setMentionQuery(null);
+      if (result === false || result == null) {
+        throw new Error("Message could not be sent. Please try again.");
+      }
 
-    selectedFiles.forEach((item) => {
-      if (item.preview) URL.revokeObjectURL(item.preview);
-    });
+      setMessage("");
+      setSelectedMentions([]);
+      setMentionQuery(null);
 
-    setSelectedFiles([]);
-    setFileError("");
+      selectedFiles.forEach((item) => {
+        if (item.preview) {
+          revokePreviewUrl(item.preview);
+        }
+      });
+
+      setSelectedFiles([]);
+      setFileError("");
+      setSendError("");
+    } catch (error) {
+      setSendError(
+        error.message || "Message could not be sent. Your draft is preserved."
+      );
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleKeyDown = (event) => {
@@ -534,13 +574,31 @@ export default function MessageComposer({
               type="submit"
               whileHover={{ scale: 1.06 }}
               whileTap={{ scale: 0.92 }}
-              disabled={!canSend || uploading}
-              aria-label="Send message"
+              disabled={!canSend || uploading || sending}
+              aria-label={sending ? "Sending message" : "Send message"}
               className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Send size={18} />
+              {sending ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : (
+                <Send size={18} />
+              )}
             </motion.button>
           </div>
+
+          {sendError && (
+            <div
+              role="alert"
+              className="border-t border-red-500/20 bg-red-500/5 px-4 py-2 text-xs text-red-500"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span>{sendError}</span>
+                <span className="shrink-0 font-semibold">
+                  Draft preserved
+                </span>
+              </div>
+            </div>
+          )}
 
           {fileError && (
             <p className="border-t border-red-500/20 px-4 py-2 text-xs text-red-500">
@@ -556,3 +614,7 @@ export default function MessageComposer({
     </form>
   );
 }
+
+
+
+

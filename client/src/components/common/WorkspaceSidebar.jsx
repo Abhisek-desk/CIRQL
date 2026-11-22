@@ -1,4 +1,4 @@
-﻿import { motion } from "motion/react";
+﻿import { m as motion } from "motion/react";
 import { Plus, Hash, Settings } from "lucide-react";
 
 export default function WorkspaceSidebar({

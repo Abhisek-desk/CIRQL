@@ -1,11 +1,21 @@
-﻿import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+﻿import { lazy, Suspense } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-import MainLayout from "./layouts/MainLayout";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import PublicRoute from "./components/auth/PublicRoute";
 import AuthProvider from "./components/auth/AuthProvider";
+
+const MainLayout = lazy(() => import("./layouts/MainLayout"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+
+function PageLoader() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[var(--bg)]">
+      <div className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-500/20 border-t-indigo-500" />
+    </div>
+  );
+}
 
 function NotFound() {
   return (
@@ -23,19 +33,21 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          <Route element={<PublicRoute />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-          </Route>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route element={<PublicRoute />}>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+            </Route>
 
-          <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<MainLayout />} />
-          </Route>
+            <Route element={<ProtectedRoute />}>
+              <Route path="/" element={<MainLayout />} />
+            </Route>
 
-          <Route path="/404" element={<NotFound />} />
-          <Route path="*" element={<Navigate to="/404" replace />} />
-        </Routes>
+            <Route path="/404" element={<NotFound />} />
+            <Route path="*" element={<Navigate to="/404" replace />} />
+          </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   );

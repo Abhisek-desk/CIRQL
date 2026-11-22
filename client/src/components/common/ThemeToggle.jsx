@@ -1,6 +1,6 @@
-import { motion } from "motion/react";
+﻿import { m as motion } from "motion/react";
 import { Moon, Sun } from "lucide-react";
-import { useTheme } from "../../context/ThemeContext";
+import { useTheme } from "../../context/useTheme";
 
 export default function ThemeToggle() {
   const { isDark, toggleTheme } = useTheme();
@@ -24,3 +24,4 @@ export default function ThemeToggle() {
     </motion.button>
   );
 }
+

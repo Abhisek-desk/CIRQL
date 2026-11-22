@@ -1,4 +1,4 @@
-﻿import { motion } from "motion/react";
+﻿import { m as motion } from "motion/react";
 import { Hash, Plus, ChevronDown, Lock, Users } from "lucide-react";
 import ProfileMenu from "../common/ProfileMenu";
 import WorkspaceMembers from "../presence/WorkspaceMembers";
@@ -156,3 +156,4 @@ export default function ChannelSidebar({
     </motion.aside>
   );
 }
+

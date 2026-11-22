@@ -1,12 +1,13 @@
 ﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, m as motion } from "motion/react";
 import toast from "react-hot-toast";
 
 import WorkspaceSidebar from "../components/common/WorkspaceSidebar";
 import ChannelSidebar from "../components/channels/ChannelSidebar";
 import ChatHeader from "../components/chat/ChatHeader";
 import ChatMessages from "../components/chat/ChatMessages";
+import MessageLoading from "../components/loaders/MessageLoading";
 import MessageSearch from "../components/chat/MessageSearch";
 import MessageComposer from "../components/chat/MessageComposer";
 import CreateItemModal from "../components/common/CreateItemModal";
@@ -21,6 +22,7 @@ import { connectSocket, disconnectSocket } from "../services/socket";
 
 export default function MainLayout() {
   const user = useSelector((state) => state.auth.user);
+  const currentUserId = user?.id || user?._id;
   const accessToken = useSelector((state) => state.auth.accessToken);
   const token = accessToken || localStorage.getItem("cirql-access-token");
 
@@ -36,6 +38,8 @@ export default function MainLayout() {
   const [firstUnreadMessageId, setFirstUnreadMessageId] = useState(null);
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [messageLoadError, setMessageLoadError] = useState("");
+  const [retryHistory, setRetryHistory] = useState(0);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -47,7 +51,6 @@ export default function MainLayout() {
     dateFilter: "all",
     date: "",
   });
-  const [pendingSearchMessage, setPendingSearchMessage] = useState(null);
   const [highlightMessageId, setHighlightMessageId] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -64,8 +67,10 @@ export default function MainLayout() {
 
   const selectedChannelRef = useRef(null);
   const selectedWorkspaceRef = useRef(null);
-  selectedChannelRef.current = selectedChannel;
-  selectedWorkspaceRef.current = selectedWorkspace;
+  useEffect(() => {
+    selectedChannelRef.current = selectedChannel;
+    selectedWorkspaceRef.current = selectedWorkspace;
+  }, [selectedChannel, selectedWorkspace]);
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
   const applyMessageUpdate = (previous, updatedMessage) => {
@@ -183,7 +188,6 @@ export default function MainLayout() {
     setSearchQuery("");
     setSearchResults([]);
     setSearchError("");
-    setPendingSearchMessage(null);
     setSearchFilters({
       senderId: "",
       dateFilter: "all",
@@ -396,7 +400,7 @@ export default function MainLayout() {
     return () => {
       active = false;
     };
-  }, [selectedWorkspace?._id]);
+  }, [selectedWorkspace?._id, pendingNotificationChannel]);
 
   // LOAD CHANNELS
   useEffect(() => {
@@ -451,7 +455,7 @@ export default function MainLayout() {
     return () => {
       active = false;
     };
-  }, [selectedWorkspace?._id]);
+  }, [selectedWorkspace?._id, pendingNotificationChannel]);
 
   // LOAD UNREAD COUNTS FOR THE SELECTED WORKSPACE
   useEffect(() => {
@@ -489,7 +493,7 @@ export default function MainLayout() {
     return () => {
       active = false;
     };
-  }, [selectedWorkspace?._id]);
+  }, [selectedWorkspace?._id, pendingNotificationChannel]);
 
   // MARK ACTIVE CHANNEL AS READ
   useEffect(() => {
@@ -558,7 +562,6 @@ export default function MainLayout() {
 
       if (isTyping) {
         if (!isTypingRef.current) {
-          console.log("SENDING TYPING START:", channelId);
           socket.emit("typing:start", channelId);
           isTypingRef.current = true;
         }
@@ -583,17 +586,27 @@ export default function MainLayout() {
     if (!channelId) {
       setMessages([]);
       setTypingUsers([]);
+      setMessageLoadError("");
+      setLoadingMessages(false);
       return;
     }
 
     const socket = connectSocket(token);
-    if (!socket) return;
+
+    if (!socket) {
+      setMessageLoadError("Could not connect to the chat server.");
+      setLoadingMessages(false);
+      return;
+    }
 
     let active = true;
+    let connectionTimeout = null;
+    let joinTimeout = null;
 
     setMessages([]);
     setTypingUsers([]);
     setChannelReadStates([]);
+    setMessageLoadError("");
     setLoadingMessages(true);
 
     const handleNewMessage = (message) => {
@@ -683,7 +696,6 @@ export default function MainLayout() {
     };
 
     const handleTypingStart = (payload) => {
-      console.log("RECEIVED TYPING START:", payload);
       if (!active || String(payload?.channelId) !== String(channelId)) return;
 
       if (String(payload.userId) === String(currentUserId)) return;
@@ -704,7 +716,6 @@ export default function MainLayout() {
     };
 
     const handleTypingStop = (payload) => {
-      console.log("RECEIVED TYPING STOP:", payload);
       if (!active || String(payload?.channelId) !== String(channelId)) return;
 
       setTypingUsers((previous) =>
@@ -744,9 +755,12 @@ export default function MainLayout() {
         });
       } catch (error) {
         if (active) {
-          toast.error(
-            error.response?.data?.message || "Could not load messages",
-          );
+          const errorMessage =
+            error.response?.data?.message ||
+            "Could not load messages. Please try again.";
+
+          setMessageLoadError(errorMessage);
+          toast.error(errorMessage);
         }
       } finally {
         if (active) setLoadingMessages(false);
@@ -754,12 +768,39 @@ export default function MainLayout() {
     };
 
     const joinChannel = () => {
+      if (!active) return;
+
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+        connectionTimeout = null;
+      }
+
+      joinTimeout = setTimeout(() => {
+        if (!active) return;
+
+        const errorMessage =
+          "Could not join this channel. Please retry.";
+
+        setMessageLoadError(errorMessage);
+        setLoadingMessages(false);
+        toast.error(errorMessage);
+      }, 10000);
+
       socket.emit("channel:join", channelId, (response) => {
         if (!active) return;
 
+        if (joinTimeout) {
+          clearTimeout(joinTimeout);
+          joinTimeout = null;
+        }
+
         if (!response?.success) {
-          toast.error(response?.message || "Could not join channel");
+          const errorMessage =
+            response?.message || "Could not join channel. Please retry.";
+
+          setMessageLoadError(errorMessage);
           setLoadingMessages(false);
+          toast.error(errorMessage);
           return;
         }
 
@@ -770,11 +811,30 @@ export default function MainLayout() {
     if (socket.connected) {
       joinChannel();
     } else {
+      connectionTimeout = setTimeout(() => {
+        if (!active) return;
+
+        const errorMessage =
+          "Chat server connection timed out. Please retry.";
+
+        setMessageLoadError(errorMessage);
+        setLoadingMessages(false);
+        toast.error(errorMessage);
+      }, 10000);
+
       socket.once("connect", joinChannel);
     }
 
     return () => {
       active = false;
+
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+      }
+
+      if (joinTimeout) {
+        clearTimeout(joinTimeout);
+      }
 
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -800,7 +860,7 @@ export default function MainLayout() {
         socket.emit("channel:leave", channelId);
       }
     };
-  }, [selectedChannel?._id, token, user?.id, user?._id]);
+  }, [selectedChannel?._id, token, currentUserId, retryHistory]);
 
   // CREATE WORKSPACE
   const handleCreateWorkspace = async (data) => {
@@ -847,8 +907,13 @@ export default function MainLayout() {
     mentionIds = [],
     files = []
   ) => {
-    if (!selectedChannel?._id) return;
-    if (uploadingAttachments) return;
+    if (!selectedChannel?._id) {
+      throw new Error("Please select a channel first.");
+    }
+
+    if (uploadingAttachments) {
+      throw new Error("An upload is already in progress.");
+    }
 
     handleTypingChange(false);
 
@@ -879,32 +944,48 @@ export default function MainLayout() {
       const socket = connectSocket(token);
 
       if (!socket?.connected) {
-        toast.error("Connecting to chat server. Please try again.");
-        return;
+        throw new Error("Chat server disconnected. Please try again.");
       }
 
-      socket.emit(
-        "message:send",
-        {
-          channelId,
-          content,
-          replyTo,
-          mentionIds,
-          attachments: uploadedAttachments,
-        },
-        (response) => {
-          if (!response?.success) {
-            toast.error(response?.message || "Message could not be sent");
-            return;
-          }
+      const response = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Message delivery timed out. Please try again."));
+        }, 12000);
 
-          setReplyToMessage(null);
-        }
-      );
+        socket.emit(
+          "message:send",
+          {
+            channelId,
+            content,
+            replyTo,
+            mentionIds,
+            attachments: uploadedAttachments,
+          },
+          (result) => {
+            clearTimeout(timeout);
+
+            if (!result?.success) {
+              reject(
+                new Error(result?.message || "Message could not be sent.")
+              );
+              return;
+            }
+
+            resolve(result);
+          }
+        );
+      });
+
+      setReplyToMessage(null);
+      return response;
     } catch (error) {
       toast.error(
-        error.response?.data?.message || "File upload or message sending failed"
+        error.response?.data?.message ||
+        error.message ||
+        "Message could not be sent."
       );
+
+      throw error;
     } finally {
       setUploadingAttachments(false);
       setUploadProgress(0);
@@ -998,7 +1079,6 @@ export default function MainLayout() {
     if (!channelId || !message?._id) return;
 
     setSearchOpen(false);
-    setPendingSearchMessage(message);
     setHighlightMessageId(null);
 
     try {
@@ -1036,7 +1116,6 @@ export default function MainLayout() {
 
       if (!found) {
         toast.error("Could not find this message in channel history.");
-        setPendingSearchMessage(null);
         return;
       }
 
@@ -1053,10 +1132,8 @@ export default function MainLayout() {
       });
 
       setHighlightMessageId(String(message._id));
-      setPendingSearchMessage(null);
     } catch (error) {
       console.error("Jump to message error:", error);
-      setPendingSearchMessage(null);
 
       toast.error(
         error.response?.data?.message || "Could not load the selected message.",
@@ -1227,8 +1304,6 @@ export default function MainLayout() {
     setMobileMenuOpen(false);
   };
 
-  const currentUserId = user?.id || user?._id;
-
   const onlineCount = onlineUsers.length;
 
   return (
@@ -1367,8 +1442,47 @@ export default function MainLayout() {
         ) : (
           <>
             {loadingMessages ? (
-              <div className="flex flex-1 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500/20 border-t-indigo-500" />
+              <div className="flex-1 overflow-y-auto">
+                <MessageLoading />
+              </div>
+            ) : messageLoadError ? (
+              <div className="flex flex-1 items-center justify-center overflow-y-auto px-6 py-10">
+                <motion.div
+                  initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.25 }}
+                  className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-7 text-center shadow-xl"
+                >
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-2xl text-red-500">
+                    !
+                  </div>
+
+                  <h3 className="mt-5 text-lg font-bold text-[var(--text)]">
+                    Couldn't load this conversation
+                  </h3>
+
+                  <p
+                    role="alert"
+                    className="mt-2 text-sm leading-6 text-[var(--muted)]"
+                  >
+                    {messageLoadError}
+                  </p>
+
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => {
+                      setMessageLoadError("");
+                      setLoadingMessages(true);
+                      setRetryHistory((previous) => previous + 1);
+                    }}
+                    className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-500"
+                  >
+                    <span className="text-base">↻</span>
+                    Retry loading messages
+                  </motion.button>
+                </motion.div>
               </div>
             ) : (
               <ChatMessages
@@ -1422,5 +1536,13 @@ export default function MainLayout() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
 
 

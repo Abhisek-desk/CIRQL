@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, m as motion } from "motion/react";
 import { X } from "lucide-react";
 
 export default function CreateItemModal({
@@ -139,3 +139,4 @@ export default function CreateItemModal({
     </AnimatePresence>
   );
 }
+

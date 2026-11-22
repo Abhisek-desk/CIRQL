@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, m as motion } from "motion/react";
 
 import MessageBubble from "./MessageBubble";
 import TypingIndicator from "./TypingIndicator";
@@ -16,6 +16,7 @@ export default function ChatMessages({
   onEditMessage,
   onDeleteMessage,
   onReplyMessage,
+  onJumpToMessage,
   onReactMessage,
 }) {
   const bottomRef = useRef(null);
@@ -78,37 +79,7 @@ export default function ChatMessages({
 
     return () => clearTimeout(timer);
   }, [highlightedId]);
-
-  useEffect(() => {
-  const debugData = {
-    currentUserId,
-
-    readStates: channelReadStates.map((state) => ({
-      userId: String(state.user?._id || state.user),
-      lastReadAt: state.lastReadAt,
-      timestamp: new Date(state.lastReadAt).getTime(),
-    })),
-
-    messages: messages.slice(-5).map((message) => {
-      const senderId =
-        message.sender?._id ||
-        message.sender?.id ||
-        message.sender;
-
-      return {
-        id: String(message._id || message.id),
-        senderId: String(senderId),
-        isOwn: String(senderId) === String(currentUserId),
-        createdAt: message.createdAt,
-        timestamp: new Date(message.createdAt).getTime(),
-      };
-    }),
-  };
-
-
-}, [currentUserId, channelReadStates, messages]);
-
-  const channelName = channel?.name || "channel";
+const channelName = channel?.name || "channel";
   const typingNames = typingUsers.map((item) => item.name);
 
   return (
@@ -128,6 +99,32 @@ export default function ChatMessages({
               "This is the beginning of your team's conversation."}
           </p>
         </div>
+
+        {messages.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            className="mx-auto flex max-w-md flex-col items-center px-6 py-12 text-center"
+          >
+            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-3xl border border-[var(--border)] bg-[var(--surface)] text-3xl font-bold text-indigo-500 shadow-sm">
+              #
+            </div>
+
+            <h3 className="text-lg font-bold text-[var(--text)]">
+              It's quiet in here
+            </h3>
+
+            <p className="mt-2 max-w-xs text-sm leading-6 text-[var(--muted)]">
+              This is the start of something great. Send the first message
+              and get your team's conversation going.
+            </p>
+
+            <div className="mt-5 rounded-full border border-indigo-500/20 bg-indigo-500/[0.06] px-4 py-2 text-xs font-medium text-indigo-500">
+              Your conversation starts here
+            </div>
+          </motion.div>
+        )}
 
         {messages.map((message) => {
           const messageId = String(message._id || message.id);
@@ -197,6 +194,7 @@ export default function ChatMessages({
                 onEdit={onEditMessage}
                 onDelete={onDeleteMessage}
                 onReply={onReplyMessage}
+                onJumpToMessage={onJumpToMessage}
                 onReact={onReactMessage}
               />
               </div>
@@ -215,6 +213,9 @@ export default function ChatMessages({
     </div>
   );
 }
+
+
+
 
 
 

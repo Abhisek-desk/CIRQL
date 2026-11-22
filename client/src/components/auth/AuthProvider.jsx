@@ -4,7 +4,6 @@ import authService from "../../services/authService";
 import {
   setCredentials,
   logout,
-  setAuthLoading,
 } from "../../features/auth/authSlice";
 
 export default function AuthProvider({ children }) {
@@ -74,3 +73,4 @@ export default function AuthProvider({ children }) {
 
   return children;
 }
+
