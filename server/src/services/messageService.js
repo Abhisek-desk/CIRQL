@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 import Message from "../models/Message.js";
 import { getAccessibleChannel } from "./channelAccess.js";
 import Workspace from "../models/Workspace.js";
@@ -7,23 +7,54 @@ import { createNotification } from "./notificationService.js";
 export const createMessage = async ({
   channelId,
   senderId,
-  content,
+  content = "",
   replyTo = null,
   mentionIds = [],
+  attachments = [],
 }) => {
-  const { channel } = (await getAccessibleChannel(channelId, senderId)) || {};
+  const { channel } =
+    (await getAccessibleChannel(channelId, senderId)) || {};
 
   if (!channel) {
     throw new Error("Channel not found or access denied");
   }
 
-  if (!content || !content.trim()) {
-    throw new Error("Message content cannot be empty");
-  }
+  const messageContent = typeof content === "string" ? content.trim() : "";
 
-  if (content.length > 5000) {
+  if (messageContent.length > 5000) {
     throw new Error("Message cannot exceed 5000 characters");
   }
+
+  if (!messageContent && (!Array.isArray(attachments) || !attachments.length)) {
+    throw new Error("Message must contain text or an attachment");
+  }
+
+  if (!Array.isArray(attachments) || attachments.length > 5) {
+    throw new Error("A message can contain at most 5 attachments");
+  }
+
+  const validAttachments = attachments.map((file) => {
+    if (
+      !file ||
+      typeof file.url !== "string" ||
+      typeof file.publicId !== "string" ||
+      typeof file.name !== "string" ||
+      !Number.isFinite(file.size) ||
+      file.size <= 0
+    ) {
+      throw new Error("Invalid attachment data");
+    }
+
+    return {
+      url: file.url,
+      publicId: file.publicId,
+      name: file.name.slice(0, 255),
+      format: file.format || "",
+      size: file.size,
+      resourceType: file.resourceType || "raw",
+      mimeType: file.mimeType || "",
+    };
+  });
 
   if (replyTo) {
     if (!mongoose.Types.ObjectId.isValid(replyTo)) {
@@ -47,9 +78,8 @@ export const createMessage = async ({
     throw new Error("Workspace not found");
   }
 
-  // Only accept unique IDs belonging to this workspace.
   const workspaceMemberIds = new Set(
-    workspace.members.map((member) => member.userId.toString()),
+    workspace.members.map((member) => member.userId.toString())
   );
 
   const validMentionIds = [
@@ -60,26 +90,26 @@ export const createMessage = async ({
         .filter(
           (id) =>
             id !== senderId.toString() &&
-            workspaceMemberIds.has(id),
-        ),
+            workspaceMemberIds.has(id)
+        )
     ),
   ];
 
-  // Private channels can only mention their own members.
   const channelMemberIds =
     channel.type === "private"
       ? new Set(channel.members.map((id) => id.toString()))
       : null;
 
   const allowedMentionIds = validMentionIds.filter(
-    (id) => !channelMemberIds || channelMemberIds.has(id),
+    (id) => !channelMemberIds || channelMemberIds.has(id)
   );
 
   const message = await Message.create({
     channel: channel._id,
     sender: senderId,
-    content: content.trim(),
+    content: messageContent,
     replyTo,
+    attachments: validAttachments,
   });
 
   const populatedMessage = await Message.findById(message._id)
@@ -101,8 +131,6 @@ export const createMessage = async ({
   const mentionedSet = new Set(allowedMentionIds);
   const notificationType = replyTo ? "reply" : "new_message";
 
-  // Mentioned users receive a mention notification instead of
-  // a regular message notification.
   const notificationJobs = recipientIds
     .filter((recipientId) => {
       const id = recipientId.toString();
@@ -121,12 +149,10 @@ export const createMessage = async ({
         type: mentionedSet.has(id) ? "mention" : notificationType,
         message: message._id,
         channel: channel._id,
-        content: content.trim(),
+        content: messageContent || "Sent an attachment",
       });
     });
 
-  // Notification failures should not make an already-saved message
-  // appear to have failed.
   const notificationResults = await Promise.allSettled(notificationJobs);
 
   notificationResults.forEach((result) => {
