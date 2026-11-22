@@ -664,7 +664,6 @@ export default function MainLayout() {
     const handleChannelRead = (payload) => {
       if (!active) return;
       if (String(payload?.channelId) !== String(channelId)) return;
-      console.log("[RECEIPT DEBUG] Socket event:", payload);
       if (!payload?.user?._id || !payload?.lastReadAt) return;
 
       setChannelReadStates((previous) => {
@@ -729,8 +728,6 @@ export default function MainLayout() {
         ]);
 
         if (!active) return;
-        console.log("[RECEIPT DEBUG] Channel:", channelId);
-        console.log("[RECEIPT DEBUG] API read states:", readStates);
         setChannelReadStates(readStates);
 
         setMessages((previous) => {

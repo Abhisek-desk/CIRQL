@@ -105,10 +105,7 @@ export default function ChatMessages({
     }),
   };
 
-  console.log(
-    "[RECEIPT DEBUG - FULL DATA]\n",
-    JSON.stringify(debugData, null, 2)
-  );
+
 }, [currentUserId, channelReadStates, messages]);
 
   const channelName = channel?.name || "channel";
