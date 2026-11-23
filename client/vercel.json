@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://cirql-server.onrender.com/api/:path*"
+    }
+  ]
+}
