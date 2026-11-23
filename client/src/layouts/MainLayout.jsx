@@ -17,6 +17,7 @@ import messageService from "../features/messages/messageService";
 import uploadService from "../features/messages/uploadService";
 import notificationService from "../features/notifications/notificationService";
 import readStateService from "../features/messages/readStateService";
+import conversationService from "../features/messages/conversationService";
 
 import { connectSocket, disconnectSocket } from "../services/socket";
 
@@ -32,6 +33,11 @@ export default function MainLayout() {
   const [workspaceMembers, setWorkspaceMembers] = useState([]);
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
+
+  // DIRECT MESSAGES
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+
 
   const [messages, setMessages] = useState([]);
   const [channelReadStates, setChannelReadStates] = useState([]);
@@ -89,6 +95,8 @@ export default function MainLayout() {
   }, [selectedChannel, selectedWorkspace]);
   const typingTimeoutRef = useRef(null);
   const isTypingRef = useRef(false);
+  const directTypingTimeoutRef = useRef(null);
+  const directIsTypingRef = useRef(false);
   const applyMessageUpdate = (previous, updatedMessage) => {
     const targetId = String(updatedMessage._id);
 
@@ -329,6 +337,39 @@ export default function MainLayout() {
       disconnectSocket();
     };
   }, [token]);
+
+  // LOAD DIRECT MESSAGE CONVERSATIONS
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    let active = true;
+
+    const loadConversations = async () => {
+      try {
+
+
+        const response = await conversationService.getConversations();
+
+        if (!active) return;
+
+        setConversations(response.conversations || []);
+      } catch (error) {
+        if (active) {
+          console.error("Could not load direct conversations:", error);
+          toast.error(
+            error.response?.data?.message ||
+            "Could not load direct conversations"
+          );
+        }
+      }
+    };
+
+    loadConversations();
+
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
 
   // LOAD NOTIFICATIONS
   useEffect(() => {
@@ -615,6 +656,37 @@ export default function MainLayout() {
     [selectedChannel?._id, token],
   );
 
+  // DIRECT MESSAGE TYPING EVENTS
+  const handleDirectTypingChange = useCallback(
+    (isTyping) => {
+      const conversationId = selectedConversation?._id;
+      const socket = connectSocket(token);
+
+      if (!conversationId || !socket?.connected) return;
+
+      if (directTypingTimeoutRef.current) {
+        clearTimeout(directTypingTimeoutRef.current);
+        directTypingTimeoutRef.current = null;
+      }
+
+      if (isTyping) {
+        if (!directIsTypingRef.current) {
+          socket.emit("dm:typing:start", conversationId);
+          directIsTypingRef.current = true;
+        }
+
+        directTypingTimeoutRef.current = setTimeout(() => {
+          socket.emit("dm:typing:stop", conversationId);
+          directIsTypingRef.current = false;
+          directTypingTimeoutRef.current = null;
+        }, 1200);
+      } else if (directIsTypingRef.current) {
+        socket.emit("dm:typing:stop", conversationId);
+        directIsTypingRef.current = false;
+      }
+    },
+    [selectedConversation?._id, token],
+  );
   // LOAD MESSAGE HISTORY + JOIN CHANNEL + TYPING LISTENERS
   useEffect(() => {
     const channelId = selectedChannel?._id;
@@ -901,6 +973,305 @@ export default function MainLayout() {
     };
   }, [selectedChannel?._id, token, currentUserId, retryHistory]);
 
+  // DIRECT MESSAGE HISTORY + REAL-TIME SOCKET EVENTS
+  useEffect(() => {
+    const conversationId = selectedConversation?._id;
+
+    if (!conversationId) return;
+
+    const socket = connectSocket(token);
+
+    if (!socket) {
+      setMessageLoadError("Could not connect to the chat server.");
+      setLoadingMessages(false);
+      return;
+    }
+
+    let active = true;
+    let joined = false;
+    let connectionTimeout = null;
+    let joinTimeout = null;
+
+    setMessages([]);
+    setTypingUsers([]);
+    setMessageLoadError("");
+    setLoadingMessages(true);
+
+    const markRead = async () => {
+      try {
+        await conversationService.markRead(conversationId);
+
+        if (!active) return;
+
+        setConversations((previous) =>
+          previous.map((conversation) =>
+            String(conversation._id) === String(conversationId)
+              ? { ...conversation, unreadCount: 0 }
+              : conversation,
+          ),
+        );
+      } catch (error) {
+        console.error("Could not mark direct conversation as read:", error);
+      }
+    };
+
+    const updateConversationPreview = (message) => {
+      setConversations((previous) =>
+        previous.map((conversation) =>
+          String(conversation._id) === String(conversationId)
+            ? {
+                ...conversation,
+                lastMessage: message,
+                lastMessageAt: message.createdAt || new Date().toISOString(),
+                unreadCount: 0,
+              }
+            : conversation,
+        ),
+      );
+    };
+
+    const handleNewDirectMessage = (message) => {
+      if (!active) return;
+
+      const incomingConversationId =
+        message.conversation?._id || message.conversation;
+
+      if (String(incomingConversationId) !== String(conversationId)) {
+        return;
+      }
+
+      setMessages((previous) => {
+        if (previous.some((item) => String(item._id) === String(message._id))) {
+          return previous;
+        }
+
+        return [...previous, message].sort(
+          (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+        );
+      });
+
+      updateConversationPreview(message);
+
+      if (document.visibilityState === "visible" && document.hasFocus()) {
+        markRead();
+      }
+    };
+
+    const handleDirectMessageUpdated = (updatedMessage) => {
+      if (!active) return;
+
+      const incomingConversationId =
+        updatedMessage.conversation?._id || updatedMessage.conversation;
+
+      if (String(incomingConversationId) !== String(conversationId)) {
+        return;
+      }
+
+      setMessages((previous) =>
+        applyMessageUpdate(previous, updatedMessage),
+      );
+
+      setConversations((previous) =>
+        previous.map((conversation) =>
+          String(conversation._id) === String(conversationId) &&
+          String(conversation.lastMessage?._id) === String(updatedMessage._id)
+            ? { ...conversation, lastMessage: updatedMessage }
+            : conversation,
+        ),
+      );
+    };
+
+    const handleDirectMessageDeleted = (deletedMessage) => {
+      if (!active) return;
+
+      const incomingConversationId =
+        deletedMessage.conversation?._id || deletedMessage.conversation;
+
+      if (String(incomingConversationId) !== String(conversationId)) {
+        return;
+      }
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(deletedMessage._id)
+            ? { ...message, ...deletedMessage }
+            : message,
+        ),
+      );
+
+      setConversations((previous) =>
+        previous.map((conversation) =>
+          String(conversation._id) === String(conversationId) &&
+          String(conversation.lastMessage?._id) === String(deletedMessage._id)
+            ? { ...conversation, lastMessage: deletedMessage }
+            : conversation,
+        ),
+      );
+    };
+
+    const handleDirectTypingStart = (payload) => {
+      if (!active) return;
+
+      if (String(payload?.conversationId) !== String(conversationId)) {
+        return;
+      }
+
+      if (String(payload.userId) === String(currentUserId)) return;
+
+      setTypingUsers((previous) => {
+        if (
+          previous.some(
+            (item) => String(item.userId) === String(payload.userId),
+          )
+        ) {
+          return previous;
+        }
+
+        return [
+          ...previous,
+          {
+            userId: payload.userId,
+            name: payload.name || "Someone",
+          },
+        ];
+      });
+    };
+
+    const handleDirectTypingStop = (payload) => {
+      if (!active) return;
+
+      if (String(payload?.conversationId) !== String(conversationId)) {
+        return;
+      }
+
+      setTypingUsers((previous) =>
+        previous.filter(
+          (item) => String(item.userId) !== String(payload.userId),
+        ),
+      );
+    };
+
+    socket.on("dm:message:new", handleNewDirectMessage);
+    socket.on("dm:message:updated", handleDirectMessageUpdated);
+    socket.on("dm:message:deleted", handleDirectMessageDeleted);
+    socket.on("dm:typing:start", handleDirectTypingStart);
+    socket.on("dm:typing:stop", handleDirectTypingStop);
+
+    const loadHistory = async () => {
+      try {
+        const response = await conversationService.getMessages(
+          conversationId,
+          undefined,
+          30,
+        );
+
+        if (!active) return;
+
+        setMessages((previous) => {
+          const combined = [...(response.messages || []), ...previous];
+          const unique = new Map();
+
+          combined.forEach((message) => {
+            unique.set(String(message._id), message);
+          });
+
+          return Array.from(unique.values()).sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+          );
+        });
+
+        await markRead();
+      } catch (error) {
+        if (active) {
+          const errorMessage =
+            error.response?.data?.message ||
+            "Could not load direct messages. Please try again.";
+
+          setMessageLoadError(errorMessage);
+          toast.error(errorMessage);
+        }
+      } finally {
+        if (active) {
+          setLoadingMessages(false);
+        }
+      }
+    };
+
+    const joinConversation = () => {
+      if (!active || !socket.connected) return;
+
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+        connectionTimeout = null;
+      }
+
+      if (joinTimeout) {
+        clearTimeout(joinTimeout);
+      }
+
+      joinTimeout = setTimeout(() => {
+        if (!active) return;
+
+        setMessageLoadError(
+          "Could not join this conversation. Please retry.",
+        );
+        setLoadingMessages(false);
+      }, 10000);
+
+      socket.emit("dm:join", conversationId, async (response) => {
+        if (!active) return;
+
+        if (joinTimeout) {
+          clearTimeout(joinTimeout);
+          joinTimeout = null;
+        }
+
+        if (!response?.success) {
+          setMessageLoadError(
+            response?.message || "Could not join this conversation.",
+          );
+          setLoadingMessages(false);
+          return;
+        }
+
+        joined = true;
+        await loadHistory();
+      });
+    };
+
+    socket.on("connect", joinConversation);
+
+    if (socket.connected) {
+      joinConversation();
+    } else {
+      connectionTimeout = setTimeout(() => {
+        if (!active) return;
+
+        setMessageLoadError(
+          "Chat server connection timed out. Please retry.",
+        );
+        setLoadingMessages(false);
+      }, 10000);
+    }
+
+    return () => {
+      active = false;
+
+      if (connectionTimeout) clearTimeout(connectionTimeout);
+      if (joinTimeout) clearTimeout(joinTimeout);
+
+      socket.off("connect", joinConversation);
+      socket.off("dm:message:new", handleNewDirectMessage);
+      socket.off("dm:message:updated", handleDirectMessageUpdated);
+      socket.off("dm:message:deleted", handleDirectMessageDeleted);
+      socket.off("dm:typing:start", handleDirectTypingStart);
+      socket.off("dm:typing:stop", handleDirectTypingStop);
+
+      if (joined && socket.connected) {
+        socket.emit("dm:leave", conversationId);
+      }
+    };
+  }, [selectedConversation?._id, token, currentUserId, retryHistory]);
   // AUTOMATICALLY LOAD AND NAVIGATE TO A SHARED MESSAGE PERMALINK
   useEffect(() => {
     if (
@@ -1148,6 +1519,127 @@ export default function MainLayout() {
     }
   };
 
+  // SEND DIRECT MESSAGE
+  const handleSendDirectMessage = async (
+    content,
+    replyTo = null,
+    mentionIds = [],
+    files = [],
+  ) => {
+    const conversationId = selectedConversation?._id;
+
+    if (!conversationId) {
+      throw new Error("Please select a conversation first.");
+    }
+
+    if (uploadingAttachments) {
+      throw new Error("An upload is already in progress.");
+    }
+
+    handleDirectTypingChange(false);
+
+    let uploadedAttachments = [];
+
+    try {
+      if (files.length > 0) {
+        setUploadingAttachments(true);
+        setUploadProgress(0);
+
+        for (let index = 0; index < files.length; index += 1) {
+          const uploadedFile = await uploadService.uploadFile(
+            files[index],
+            (progress) => {
+              const overallProgress = Math.round(
+                ((index + progress / 100) / files.length) * 100,
+              );
+
+              setUploadProgress(overallProgress);
+            },
+          );
+
+          uploadedAttachments.push(uploadedFile);
+        }
+      }
+
+      const socket = connectSocket(token);
+
+      if (!socket?.connected) {
+        throw new Error("Chat server disconnected. Please try again.");
+      }
+
+      const response = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Message delivery timed out. Please try again."));
+        }, 12000);
+
+        socket.emit(
+          "dm:send",
+          {
+            conversationId,
+            content,
+            replyTo,
+            attachments: uploadedAttachments,
+          },
+          (result) => {
+            clearTimeout(timeout);
+
+            if (!result?.success || !result.message) {
+              reject(
+                new Error(result?.message || "Direct message could not be sent."),
+              );
+              return;
+            }
+
+            resolve(result);
+          },
+        );
+      });
+
+      const sentMessage = response.message;
+
+      setMessages((previous) => {
+        if (
+          previous.some(
+            (message) => String(message._id) === String(sentMessage._id),
+          )
+        ) {
+          return previous;
+        }
+
+        return [...previous, sentMessage].sort(
+          (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+        );
+      });
+
+      setConversations((previous) =>
+        previous.map((conversation) =>
+          String(conversation._id) === String(conversationId)
+            ? {
+                ...conversation,
+                lastMessage: sentMessage,
+                lastMessageAt: sentMessage.createdAt,
+                unreadCount: 0,
+              }
+            : conversation,
+        ),
+      );
+
+      setReplyToMessage(null);
+
+      return response;
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message ||
+        error.message ||
+        "Direct message could not be sent.",
+      );
+
+      throw error;
+    } finally {
+      setUploadingAttachments(false);
+      setUploadProgress(0);
+    }
+  };
   // EDIT MESSAGE
   const handleEditMessage = useCallback(async (messageId, content) => {
     try {
@@ -1224,7 +1716,59 @@ export default function MainLayout() {
     }
   }, []);
 
+  // START A DIRECT CONVERSATION FROM A WORKSPACE MEMBER
+  const handleSelectMember = async (member) => {
+    const recipientId = member?._id || member?.id;
+
+    if (!recipientId || String(recipientId) === String(currentUserId)) {
+      return;
+    }
+
+    try {
+      const response = await conversationService.startConversation(recipientId);
+      const conversation = response.conversation;
+
+      if (!conversation?._id) {
+        throw new Error("Could not create or open this conversation.");
+      }
+
+      setConversations((previous) => {
+        const filtered = previous.filter(
+          (item) => String(item._id) !== String(conversation._id)
+        );
+
+        return [conversation, ...filtered];
+      });
+
+      setSelectedConversation(conversation);
+      setSelectedChannel(null);
+      setReplyToMessage(null);
+      setMessages([]);
+      setTypingUsers([]);
+      setMobileMenuOpen(false);
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message ||
+        error.message ||
+        "Could not start direct conversation"
+      );
+    }
+  };
+
+  // OPEN AN EXISTING DIRECT CONVERSATION
+  const handleSelectConversation = (conversation) => {
+    if (!conversation?._id) return;
+
+    setSelectedConversation(conversation);
+    setSelectedChannel(null);
+    setReplyToMessage(null);
+    setMessages([]);
+    setTypingUsers([]);
+    setMobileMenuOpen(false);
+  };
+
   const handleSelectWorkspace = (workspace) => {
+    setSelectedConversation(null);
     setSelectedWorkspace(workspace);
     setMobileMenuOpen(false);
   };
@@ -1363,6 +1907,7 @@ export default function MainLayout() {
     }
   }, [messages, selectedChannel]);
   const handleSelectChannel = (channel) => {
+    setSelectedConversation(null);
     setSelectedChannel(channel);
     setReplyToMessage(null);
     setMobileMenuOpen(false);
@@ -1484,6 +2029,10 @@ export default function MainLayout() {
           members={workspaceMembers}
           onlineUsers={onlineUsers}
           unreadCounts={channelUnreadCounts}
+          conversations={conversations}
+          selectedConversation={selectedConversation}
+          onSelectConversation={handleSelectConversation}
+          onSelectMember={handleSelectMember}
         />
       </div>
 
@@ -1522,6 +2071,10 @@ export default function MainLayout() {
                 members={workspaceMembers}
                 onlineUsers={onlineUsers}
                 unreadCounts={channelUnreadCounts}
+                conversations={conversations}
+                selectedConversation={selectedConversation}
+                onSelectConversation={handleSelectConversation}
+                onSelectMember={handleSelectMember}
               />
             </motion.div>
           </motion.div>
@@ -1694,3 +2247,8 @@ export default function MainLayout() {
     </div>
   );
 }
+
+
+
+
+
