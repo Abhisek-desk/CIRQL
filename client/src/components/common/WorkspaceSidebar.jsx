@@ -6,6 +6,7 @@ export default function WorkspaceSidebar({
   selectedWorkspace,
   onSelectWorkspace,
   onCreateWorkspace,
+  onSettingsClick,
 }) {
   const workspaceColors = [
     "#6366f1",
@@ -81,6 +82,7 @@ export default function WorkspaceSidebar({
         <button
           type="button"
           title="Settings"
+          onClick={onSettingsClick}
           className="rounded-xl p-3 text-[var(--muted)] transition hover:bg-[var(--surface)]"
         >
           <Settings size={19} />
@@ -89,3 +91,5 @@ export default function WorkspaceSidebar({
     </motion.aside>
   );
 }
+
+

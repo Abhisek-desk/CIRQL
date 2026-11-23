@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, m as motion } from "motion/react";
 import {
   Bell,
@@ -15,6 +15,8 @@ const iconMap = {
   reply: Reply,
   mention: AtSign,
   workspace_invitation: UserPlus,
+  direct_message: MessageCircle,
+  direct_message_reply: Reply,
 };
 
 const formatTime = (date) => {
@@ -52,12 +54,21 @@ const formatPreview = (content = "") => {
 
 const getDescription = (notification) => {
   switch (notification.type) {
+    case "direct_message":
+      return "sent you a direct message";
+
+    case "direct_message_reply":
+      return "replied to your direct message";
+
     case "reply":
       return "replied in";
+
     case "mention":
       return "mentioned you in";
+
     case "workspace_invitation":
       return "invited you to join a workspace";
+
     case "new_message":
     default:
       return "sent a message in";
@@ -188,6 +199,12 @@ export default function NotificationBell({
                 <div className="divide-y divide-[var(--border)]">
                   {notifications.map((notification) => {
                     const Icon = iconMap[notification.type] || Bell;
+
+                    const isDirectMessage = [
+                      "direct_message",
+                      "direct_message_reply",
+                    ].includes(notification.type);
+
                     const channelName =
                       notification.channel?.name ||
                       (notification.channel ? "channel" : null);
@@ -239,7 +256,7 @@ export default function NotificationBell({
                             <p className="mt-1 text-xs leading-relaxed text-[var(--muted)]">
                               {getDescription(notification)}
 
-                              {channelName && (
+                              {!isDirectMessage && channelName && (
                                 <>
                                   {" "}
                                   <span className="font-semibold text-[var(--text)]">

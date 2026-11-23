@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
   {
@@ -51,6 +51,14 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    notificationPreferences: {
+      directMessages: { type: Boolean, default: true },
+      replies: { type: Boolean, default: true },
+      mentions: { type: Boolean, default: true },
+      channelMessages: { type: Boolean, default: true },
+      sound: { type: Boolean, default: true },
+    },
+
     role: {
       type: String,
       enum: ["user", "admin"],

@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 
 import healthRoutes from "./routes/healthRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import settingsRoutes from "./routes/settingsRoutes.js";
 
 import notFoundMiddleware from "./middleware/notFoundMiddleware.js";
 import errorMiddleware from "./middleware/errorMiddleware.js";
@@ -65,6 +66,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.use("/api/workspaces", workspaceRoutes);
 app.use("/api/channels", channelRoutes);
@@ -81,5 +83,6 @@ app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
 export default app;
+
 
 

@@ -1,4 +1,4 @@
-﻿import { Server } from "socket.io";
+import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
@@ -14,6 +14,7 @@ import {
 import Message from "../models/Message.js";
 import DirectMessage from "../models/DirectMessage.js";
 import Conversation from "../models/Conversation.js";
+import { createNotification } from "../services/notificationService.js";
 
 let io;
 
@@ -213,7 +214,23 @@ export const initializeSocketServer = (httpServer) => {
             String(participant) !== String(socket.user._id)
         );
 
-        // Send to conversation members and their other connected devices.
+        
+        if (recipientId) {
+          try {
+            await createNotification({
+              recipient: recipientId,
+              sender: socket.user._id,
+              type: replyTo ? "direct_message_reply" : "direct_message",
+              directMessage: message._id,
+              conversation: conversation._id,
+              content: content.trim() || "Sent an attachment",
+            });
+          } catch (notificationError) {
+            console.error("DM notification error:", notificationError.message);
+          }
+        }
+
+// Send to conversation members and their other connected devices.
         // The sender's current socket is excluded; its acknowledgement
         // supplies the newly created message.
         socket.to(`conversation:${conversationId}`)

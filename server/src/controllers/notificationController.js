@@ -8,6 +8,7 @@ export const getNotifications = async (req, res, next) => {
       })
         .populate("sender", "name avatar")
         .populate("channel", "name workspace")
+        .populate("conversation", "participants")
         .sort({ createdAt: -1 })
         .limit(50),
 

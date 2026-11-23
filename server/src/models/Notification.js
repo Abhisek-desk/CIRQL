@@ -22,6 +22,8 @@ const notificationSchema = new mongoose.Schema(
         "reply",
         "mention",
         "workspace_invitation",
+        "direct_message",
+        "direct_message_reply",
       ],
       required: true,
     },
@@ -35,6 +37,18 @@ const notificationSchema = new mongoose.Schema(
     channel: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Channel",
+      default: null,
+    },
+
+    directMessage: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "DirectMessage",
+      default: null,
+    },
+
+    conversation: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Conversation",
       default: null,
     },
 

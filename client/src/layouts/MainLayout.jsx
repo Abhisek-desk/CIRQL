@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, m as motion } from "motion/react";
 import toast from "react-hot-toast";
 
@@ -22,7 +23,56 @@ import conversationService from "../features/messages/conversationService";
 
 import { connectSocket, disconnectSocket } from "../services/socket";
 
+
+function playCirqlNotificationSound() {
+  try {
+    const preferences = JSON.parse(
+      localStorage.getItem("cirql-notification-preferences") || "{}"
+    );
+
+    if (preferences.sound === false) return;
+
+    const AudioContextClass =
+      window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioContextClass) return;
+
+    const context = new AudioContextClass();
+
+    if (context.state === "suspended") {
+      context.resume().catch(() => {});
+    }
+
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(660, context.currentTime);
+    oscillator.frequency.setValueAtTime(880, context.currentTime + 0.09);
+
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      0.12,
+      context.currentTime + 0.025
+    );
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      context.currentTime + 0.22
+    );
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.24);
+
+    oscillator.onended = () => context.close();
+  } catch {
+    // Audio is optional; notification delivery must never fail because of it.
+  }
+}
 export default function MainLayout() {
+  const navigate = useNavigate();
   const user = useSelector((state) => state.auth.user);
   const currentUserId = user?.id || user?._id;
   const accessToken = useSelector((state) => state.auth.accessToken);
@@ -295,6 +345,7 @@ export default function MainLayout() {
       if (!notification.isRead) {
         setUnreadCount((previous) => previous + 1);
 
+        playCirqlNotificationSound();
         toast("New notification", {
           icon: "\uD83D\uDD14",
         });
@@ -2040,6 +2091,44 @@ export default function MainLayout() {
       await handleMarkNotificationRead(notification._id);
     }
 
+    // DIRECT MESSAGE NOTIFICATION
+    const conversationId =
+      notification.conversation?._id || notification.conversation;
+
+    if (
+      conversationId &&
+      ["direct_message", "direct_message_reply"].includes(notification.type)
+    ) {
+      let targetConversation = conversations.find(
+        (item) => String(item._id) === String(conversationId),
+      );
+
+      // Refresh the list if the conversation is not currently loaded.
+      if (!targetConversation) {
+        try {
+          const response = await conversationService.getConversations();
+          const updatedConversations = response.conversations || [];
+
+          setConversations(updatedConversations);
+
+          targetConversation = updatedConversations.find(
+            (item) => String(item._id) === String(conversationId),
+          );
+        } catch (error) {
+          console.error("Could not load notification conversation:", error);
+        }
+      }
+
+      if (!targetConversation) {
+        toast.error("Could not locate this direct conversation");
+        return;
+      }
+
+      handleSelectConversation(targetConversation);
+      return;
+    }
+
+    // EXISTING CHANNEL NOTIFICATION NAVIGATION
     const channelId = notification.channel?._id || notification.channel;
 
     const workspaceId =
@@ -2088,6 +2177,7 @@ export default function MainLayout() {
           selectedWorkspace={selectedWorkspace}
           onSelectWorkspace={handleSelectWorkspace}
           onCreateWorkspace={() => setWorkspaceModalOpen(true)}
+        onSettingsClick={() => navigate("/settings")}
         />
       </div>
 
@@ -2131,6 +2221,7 @@ export default function MainLayout() {
                 selectedWorkspace={selectedWorkspace}
                 onSelectWorkspace={handleSelectWorkspace}
                 onCreateWorkspace={() => setWorkspaceModalOpen(true)}
+        onSettingsClick={() => navigate("/settings")}
               />
 
               <ChannelSidebar
@@ -2333,7 +2424,7 @@ export default function MainLayout() {
                     }}
                     className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-500"
                   >
-                    <span className="text-base">↻</span>
+                    <span className="text-base">?</span>
                     Retry loading messages
                   </motion.button>
                 </motion.div>
@@ -2392,10 +2483,5 @@ export default function MainLayout() {
     </div>
   );
 }
-
-
-
-
-
 
 

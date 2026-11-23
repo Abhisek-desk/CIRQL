@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Conversation from "../models/Conversation.js";
 import DirectMessage from "../models/DirectMessage.js";
+import { createNotification } from "../services/notificationService.js";
 
 import {
   createOrGetConversation,
@@ -312,6 +313,26 @@ export const sendDirectMessage = async (req, res, next) => {
         select: "name avatar",
       },
     });
+
+
+    const recipientId = conversation.participants.find(
+      (participant) => String(participant) !== String(req.user._id)
+    );
+
+    if (recipientId) {
+      try {
+        await createNotification({
+          recipient: recipientId,
+          sender: req.user._id,
+          type: replyTo ? "direct_message_reply" : "direct_message",
+          directMessage: message._id,
+          conversation: conversation._id,
+          content: content.trim() || "Sent an attachment",
+        });
+      } catch (notificationError) {
+        console.error("DM notification error:", notificationError.message);
+      }
+    }
 
     return res.status(201).json({
       success: true,
