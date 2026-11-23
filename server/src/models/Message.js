@@ -1,4 +1,4 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
 
 const attachmentSchema = new mongoose.Schema(
   {
@@ -92,9 +92,16 @@ const messageSchema = new mongoose.Schema(
             required: true,
           },
           emoji: {
-            type: String,
-            required: true,
-            enum: ["ðŸ‘", "â", "ðŸ˜‚", "ðŸŽ‰", "ðŸ‘€", "ðŸš€"],
+              type: String,
+              required: true,
+              enum: [
+                "\u{1F44D}",
+                "\u2764\uFE0F",
+                "\u{1F602}",
+                "\u{1F389}",
+                "\u{1F440}",
+                "\u{1F680}",
+              ],
           },
         },
       ],

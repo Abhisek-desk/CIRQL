@@ -40,6 +40,7 @@ export default function MainLayout() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [messageLoadError, setMessageLoadError] = useState("");
   const [retryHistory, setRetryHistory] = useState(0);
+  const [historyReadyChannelId, setHistoryReadyChannelId] = useState(null);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -64,6 +65,21 @@ export default function MainLayout() {
   const [channelUnreadCounts, setChannelUnreadCounts] = useState({});
   const [pendingNotificationChannel, setPendingNotificationChannel] =
     useState(null);
+
+  const [pendingPermalink] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const match = window.location.hash.match(/^#message-(.+)$/);
+
+    const workspaceId = params.get("workspaceId");
+    const channelId = params.get("channelId");
+    const messageId = match?.[1];
+
+    return workspaceId && channelId && messageId
+      ? { workspaceId, channelId, messageId }
+      : null;
+  });
+
+  const permalinkHandledRef = useRef("");
 
   const selectedChannelRef = useRef(null);
   const selectedWorkspaceRef = useRef(null);
@@ -356,7 +372,15 @@ export default function MainLayout() {
           return data.find((item) => item._id === current._id);
         }
 
-        return data[0] || null;
+        const requestedWorkspaceId = new URLSearchParams(
+          window.location.search
+        ).get("workspaceId");
+
+        const requestedWorkspace = data.find(
+          (item) => String(item._id) === String(requestedWorkspaceId)
+        );
+
+        return requestedWorkspace || data[0] || null;
       });
     } catch (error) {
       toast.error(error.response?.data?.message || "Could not load workspaces");
@@ -400,7 +424,7 @@ export default function MainLayout() {
     return () => {
       active = false;
     };
-  }, [selectedWorkspace?._id, pendingNotificationChannel]);
+  }, [selectedWorkspace?._id, pendingNotificationChannel, pendingPermalink]);
 
   // LOAD CHANNELS
   useEffect(() => {
@@ -424,7 +448,19 @@ export default function MainLayout() {
 
         setChannels(data);
 
-        if (pendingNotificationChannel) {
+        const permalinkChannel =
+          pendingPermalink &&
+          String(pendingPermalink.workspaceId) === String(selectedWorkspace._id)
+            ? data.find(
+                (channel) =>
+                  String(channel._id) === String(pendingPermalink.channelId)
+              )
+            : null;
+
+        if (permalinkChannel) {
+          setSelectedChannel(permalinkChannel);
+          setPendingNotificationChannel(null);
+        } else if (pendingNotificationChannel) {
           const targetChannel = data.find(
             (channel) =>
               String(channel._id) === String(pendingNotificationChannel),
@@ -455,7 +491,7 @@ export default function MainLayout() {
     return () => {
       active = false;
     };
-  }, [selectedWorkspace?._id, pendingNotificationChannel]);
+  }, [selectedWorkspace?._id, pendingNotificationChannel, pendingPermalink]);
 
   // LOAD UNREAD COUNTS FOR THE SELECTED WORKSPACE
   useEffect(() => {
@@ -493,7 +529,7 @@ export default function MainLayout() {
     return () => {
       active = false;
     };
-  }, [selectedWorkspace?._id, pendingNotificationChannel]);
+  }, [selectedWorkspace?._id, pendingNotificationChannel, pendingPermalink]);
 
   // MARK ACTIVE CHANNEL AS READ
   useEffect(() => {
@@ -608,6 +644,7 @@ export default function MainLayout() {
     setChannelReadStates([]);
     setMessageLoadError("");
     setLoadingMessages(true);
+    setHistoryReadyChannelId(null);
 
     const handleNewMessage = (message) => {
       if (!active) return;
@@ -753,6 +790,8 @@ export default function MainLayout() {
             (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
           );
         });
+
+        setHistoryReadyChannelId(String(channelId));
       } catch (error) {
         if (active) {
           const errorMessage =
@@ -862,6 +901,123 @@ export default function MainLayout() {
     };
   }, [selectedChannel?._id, token, currentUserId, retryHistory]);
 
+  // AUTOMATICALLY LOAD AND NAVIGATE TO A SHARED MESSAGE PERMALINK
+  useEffect(() => {
+    if (
+      !pendingPermalink ||
+      !selectedWorkspace?._id ||
+      !selectedChannel?._id ||
+      loadingMessages ||
+      historyReadyChannelId !== String(selectedChannel._id)
+    ) {
+      return;
+    }
+
+    if (
+      String(selectedWorkspace._id) !== String(pendingPermalink.workspaceId) ||
+      String(selectedChannel._id) !== String(pendingPermalink.channelId)
+    ) {
+      return;
+    }
+
+    const permalinkKey = `${pendingPermalink.channelId}:${pendingPermalink.messageId}`;
+
+    if (permalinkHandledRef.current === permalinkKey) return;
+
+    let active = true;
+
+    const loadPermalinkMessage = async () => {
+      try {
+        let currentMessages = [...messages];
+
+        let found = currentMessages.some(
+          (item) => String(item._id) === String(pendingPermalink.messageId)
+        );
+
+        let cursor = currentMessages[0]?._id;
+        let pageCount = 0;
+
+        while (!found && cursor && pageCount < 100) {
+          const page = await messageService.getMessagesPage(
+            selectedChannel._id,
+            cursor,
+            30
+          );
+
+          if (!active) return;
+
+          const olderMessages = page.messages || [];
+
+          if (!olderMessages.length) break;
+
+          currentMessages = [...olderMessages, ...currentMessages];
+
+          found = currentMessages.some(
+            (item) => String(item._id) === String(pendingPermalink.messageId)
+          );
+
+          if (!page.hasMore || !page.nextCursor) break;
+
+          cursor = page.nextCursor;
+          pageCount += 1;
+        }
+
+        if (!active) return;
+
+        if (!found) {
+          permalinkHandledRef.current = permalinkKey;
+          toast.error("The shared message could not be found.");
+          return;
+        }
+
+        setMessages((previous) => {
+          const unique = new Map();
+
+          [...currentMessages, ...previous].forEach((item) => {
+            unique.set(String(item._id), item);
+          });
+
+          return Array.from(unique.values()).sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+          );
+        });
+
+        permalinkHandledRef.current = permalinkKey;
+
+        setHighlightMessageId(null);
+
+        requestAnimationFrame(() => {
+          if (active) {
+            setHighlightMessageId(String(pendingPermalink.messageId));
+          }
+        });
+
+        toast.success("Shared message opened");
+      } catch (error) {
+        if (!active) return;
+
+        console.error("Permalink navigation error:", error);
+
+        toast.error(
+          error.response?.data?.message ||
+          "Could not open the shared message."
+        );
+      }
+    };
+
+    loadPermalinkMessage();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    pendingPermalink,
+    selectedWorkspace?._id,
+    selectedChannel?._id,
+    historyReadyChannelId,
+    loadingMessages,
+    messages,
+  ]);
   // CREATE WORKSPACE
   const handleCreateWorkspace = async (data) => {
     try {
@@ -993,7 +1149,7 @@ export default function MainLayout() {
   };
 
   // EDIT MESSAGE
-  const handleEditMessage = async (messageId, content) => {
+  const handleEditMessage = useCallback(async (messageId, content) => {
     try {
       const updatedMessage = await messageService.editMessage(
         messageId,
@@ -1018,9 +1174,9 @@ export default function MainLayout() {
       toast.error(error.response?.data?.message || "Could not edit message");
       throw error;
     }
-  };
+  }, [token]);
   // DELETE MESSAGE
-  const handleDeleteMessage = async (messageId) => {
+  const handleDeleteMessage = useCallback(async (messageId) => {
     try {
       await messageService.deleteMessage(messageId);
 
@@ -1048,10 +1204,10 @@ export default function MainLayout() {
     } catch (error) {
       toast.error(error.response?.data?.message || "Could not delete message");
     }
-  };
+  }, [token]);
 
   // TOGGLE MESSAGE REACTION
-  const handleReactMessage = async (messageId, emoji) => {
+  const handleReactMessage = useCallback(async (messageId, emoji) => {
     try {
       const response = await messageService.toggleReaction(messageId, emoji);
 
@@ -1066,7 +1222,7 @@ export default function MainLayout() {
     } catch (error) {
       toast.error(error.response?.data?.message || "Could not update reaction");
     }
-  };
+  }, []);
 
   const handleSelectWorkspace = (workspace) => {
     setSelectedWorkspace(workspace);
@@ -1141,7 +1297,7 @@ export default function MainLayout() {
     }
   };
 
-  const handleReplyPreviewClick = async (messageId) => {
+  const handleReplyPreviewClick = useCallback(async (messageId) => {
     if (!messageId || !selectedChannel?._id) return;
 
     const channelId = selectedChannel._id;
@@ -1205,7 +1361,7 @@ export default function MainLayout() {
       console.error("Reply navigation error:", error);
       toast.error("Could not navigate to the original message.");
     }
-  };
+  }, [messages, selectedChannel]);
   const handleSelectChannel = (channel) => {
     setSelectedChannel(channel);
     setReplyToMessage(null);
@@ -1372,7 +1528,7 @@ export default function MainLayout() {
         )}
       </AnimatePresence>
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatHeader
           onMenuClick={() => setMobileMenuOpen(true)}
           channel={selectedChannel}
@@ -1489,6 +1645,8 @@ export default function MainLayout() {
                 messages={messages}
                 channelReadStates={channelReadStates}
                 channel={selectedChannel}
+                workspaceId={selectedWorkspace._id}
+                channelId={selectedChannel._id}
                 firstUnreadMessageId={firstUnreadMessageId}
                 typingUsers={typingUsers}
                 members={workspaceMembers}
@@ -1536,13 +1694,6 @@ export default function MainLayout() {
     </div>
   );
 }
-
-
-
-
-
-
-
 
 
 

@@ -10,8 +10,39 @@ import {
   AtSign,
   FileText,
   Upload,
+  Bold,
+  Italic,
+  Strikethrough,
+  Code2,
 } from "lucide-react";
 
+const EMOJI_OPTIONS = [
+  { emoji: "\u{1F600}", name: "grinning", category: "Smileys" },
+  { emoji: "\u{1F602}", name: "laughing", category: "Smileys" },
+  { emoji: "\u{1F923}", name: "rofl", category: "Smileys" },
+  { emoji: "\u{1F60D}", name: "heart eyes", category: "Smileys" },
+  { emoji: "\u{1F970}", name: "smiling hearts", category: "Smileys" },
+  { emoji: "\u{1F60E}", name: "cool", category: "Smileys" },
+  { emoji: "\u{1F914}", name: "thinking", category: "Smileys" },
+  { emoji: "\u{1F622}", name: "crying", category: "Smileys" },
+  { emoji: "\u{1F62E}", name: "surprised", category: "Smileys" },
+  { emoji: "\u{1F44D}", name: "thumbs up", category: "Gestures" },
+  { emoji: "\u{1F44E}", name: "thumbs down", category: "Gestures" },
+  { emoji: "\u{1F44F}", name: "clapping", category: "Gestures" },
+  { emoji: "\u{1F64C}", name: "celebration", category: "Gestures" },
+  { emoji: "\u{1F91D}", name: "handshake", category: "Gestures" },
+  { emoji: "\u{1F4AA}", name: "strong", category: "Gestures" },
+  { emoji: "\u{1F44B}", name: "wave", category: "Gestures" },
+  { emoji: "\u2764\uFE0F", name: "heart", category: "Symbols" },
+  { emoji: "\u{1F525}", name: "fire", category: "Symbols" },
+  { emoji: "\u{1F389}", name: "party", category: "Symbols" },
+  { emoji: "\u{1F680}", name: "rocket", category: "Symbols" },
+  { emoji: "\u{1F4AF}", name: "100", category: "Symbols" },
+  { emoji: "\u{1F31F}", name: "star", category: "Symbols" },
+  { emoji: "\u{1F440}", name: "eyes", category: "Symbols" },
+  { emoji: "\u{1F4A1}", name: "idea", category: "Symbols" },
+  { emoji: "\u{1F389}", name: "celebrate", category: "Symbols" },
+];
 const MAX_FILES = 5;
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -53,10 +84,14 @@ export default function MessageComposer({
   const [fileError, setFileError] = useState("");
   const [sendError, setSendError] = useState("");
   const [sending, setSending] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [emojiSearch, setEmojiSearch] = useState("");
 
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const previewUrlsRef = useRef(new Set());
+  const emojiPickerRef = useRef(null);
+  const cursorPositionRef = useRef({ start: 0, end: 0 });
 
   const revokePreviewUrl = (url) => {
     if (!url) return;
@@ -77,6 +112,34 @@ export default function MessageComposer({
     };
   }, []);
 
+
+  useEffect(() => {
+    if (!emojiPickerOpen) return;
+
+    const handleOutsideClick = (event) => {
+      if (!emojiPickerRef.current?.contains(event.target)) {
+        setEmojiPickerOpen(false);
+        setEmojiSearch("");
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setEmojiPickerOpen(false);
+        setEmojiSearch("");
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("touchstart", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("touchstart", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [emojiPickerOpen]);
   const filteredMembers = useMemo(() => {
     if (!mentionQuery) return [];
 
@@ -92,6 +155,10 @@ export default function MessageComposer({
   const handleChange = (event) => {
     const value = event.target.value;
     const cursor = event.target.selectionStart;
+    cursorPositionRef.current = {
+      start: cursor,
+      end: event.target.selectionEnd,
+    };
 
     setMessage(value);
 
@@ -158,6 +225,110 @@ export default function MessageComposer({
     });
   };
 
+
+  const applyFormatting = (type) => {
+    const formats = {
+      bold: ["**", "**"],
+      italic: ["*", "*"],
+      strike: ["~~", "~~"],
+      code: ["`", "`"],
+      codeBlock: ["```\n", "\n```"],
+    };
+
+    const [prefix, suffix] = formats[type];
+    const textarea = textareaRef.current;
+
+    const start = textarea?.selectionStart ??
+      cursorPositionRef.current.start;
+    const end = textarea?.selectionEnd ??
+      cursorPositionRef.current.end;
+
+    const selectedText = message.slice(start, end);
+    const replacement = `${prefix}${selectedText}${suffix}`;
+
+    const updatedMessage =
+      message.slice(0, start) +
+      replacement +
+      message.slice(end);
+
+    const nextStart = start + prefix.length;
+    const nextEnd = selectedText
+      ? nextStart + selectedText.length
+      : nextStart;
+
+    setMessage(updatedMessage);
+
+    setSelectedMentions((previous) =>
+      previous.filter((mention) =>
+        updatedMessage.includes(mention.token),
+      ),
+    );
+
+    setMentionQuery(null);
+    onTypingChange?.(Boolean(updatedMessage.trim()));
+
+    cursorPositionRef.current = {
+      start: nextStart,
+      end: nextEnd,
+    };
+
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(
+        nextStart,
+        nextEnd,
+      );
+    });
+  };
+  const filteredEmojis = EMOJI_OPTIONS.filter((item) => {
+    const query = emojiSearch.trim().toLowerCase();
+
+    return (
+      !query ||
+      item.name.includes(query) ||
+      item.category.toLowerCase().includes(query)
+    );
+  });
+
+  const handleInsertEmoji = (emoji) => {
+    const textarea = textareaRef.current;
+
+    const start = textarea?.selectionStart ??
+      cursorPositionRef.current.start;
+    const end = textarea?.selectionEnd ??
+      cursorPositionRef.current.end;
+
+    const updatedMessage =
+      message.slice(0, start) + emoji + message.slice(end);
+
+    const nextCursor = start + emoji.length;
+
+    setMessage(updatedMessage);
+
+    setSelectedMentions((previous) =>
+      previous.filter((mention) =>
+        updatedMessage.includes(mention.token),
+      ),
+    );
+
+    setMentionQuery(null);
+    setEmojiPickerOpen(false);
+    setEmojiSearch("");
+    onTypingChange?.(Boolean(updatedMessage.trim()));
+
+    cursorPositionRef.current = {
+      start: nextCursor,
+      end: nextCursor,
+    };
+
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(
+        nextCursor,
+        nextCursor,
+      );
+    });
+  };
   const handleFileSelection = (event) => {
     const files = Array.from(event.target.files || []);
 
@@ -315,6 +486,8 @@ export default function MessageComposer({
 
     if (event.key === "Escape") {
       setMentionQuery(null);
+      setEmojiPickerOpen(false);
+      setEmojiSearch("");
       return;
     }
 
@@ -524,6 +697,12 @@ export default function MessageComposer({
                 ref={textareaRef}
                 value={message}
                 onChange={handleChange}
+                onSelect={(event) => {
+                  cursorPositionRef.current = {
+                    start: event.target.selectionStart,
+                    end: event.target.selectionEnd,
+                  };
+                }}
                 onBlur={() => onTypingChange?.(false)}
                 onKeyDown={handleKeyDown}
                 placeholder={`Message #${channelName}...`}
@@ -555,14 +734,116 @@ export default function MessageComposer({
                 <Paperclip size={19} />
               </button>
 
-              <button
-                type="button"
-                aria-label="Add emoji"
-                className="flex h-9 w-9 items-center justify-center rounded-xl text-[var(--muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--primary)]"
-              >
-                <Smile size={19} />
-              </button>
+              <div ref={emojiPickerRef} className="relative">
+                <button
+                  type="button"
+                  aria-label="Add emoji"
+                  aria-expanded={emojiPickerOpen}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setEmojiPickerOpen((previous) => !previous);
+                    setEmojiSearch("");
+                  }}
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
+                    emojiPickerOpen
+                      ? "bg-indigo-500/10 text-indigo-500"
+                      : "text-[var(--muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--primary)]"
+                  }`}
+                >
+                  <Smile size={19} />
+                </button>
 
+                <AnimatePresence>
+                  {emojiPickerOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.96 }}
+                      transition={{ duration: 0.16 }}
+                      className="absolute bottom-full left-0 z-[100] mb-3 w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--bg)] shadow-2xl"
+                    >
+                      <div className="border-b border-[var(--border)] p-3">
+                        <p className="mb-2 text-sm font-semibold text-[var(--text)]">
+                          Choose an emoji
+                        </p>
+
+                        <input
+                          type="text"
+                          value={emojiSearch}
+                          onChange={(event) => setEmojiSearch(event.target.value)}
+                          placeholder="Search emojis..."
+                          aria-label="Search emojis"
+                          className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted)] focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="custom-scrollbar max-h-60 overflow-y-auto p-3">
+                        {filteredEmojis.length > 0 ? (
+                          ["Smileys", "Gestures", "Symbols"].map((category) => {
+                            const categoryEmojis = filteredEmojis.filter(
+                              (item) => item.category === category
+                            );
+
+                            if (!categoryEmojis.length) return null;
+
+                            return (
+                              <div key={category} className="mb-3 last:mb-0">
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+                                  {category}
+                                </p>
+
+                                <div className="grid grid-cols-7 gap-1">
+                                  {categoryEmojis.map((item, index) => (
+                                    <button
+                                      key={`${category}-${item.name}-${index}`}
+                                      type="button"
+                                      title={item.name}
+                                      aria-label={item.name}
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      // eslint-disable-next-line react-hooks/refs
+                                      onClick={() => handleInsertEmoji(item.emoji)}
+                                      className="flex h-9 w-9 items-center justify-center rounded-lg text-xl transition hover:scale-110 hover:bg-[var(--surface-hover)] active:scale-95"
+                                    >
+                                      {item.emoji}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="py-8 text-center text-sm text-[var(--muted)]">
+                            No emojis found.
+                          </p>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <div className="mx-1 h-5 w-px bg-[var(--border)]" />
+
+              {[
+                { type: "bold", label: "Bold", icon: Bold },
+                { type: "italic", label: "Italic", icon: Italic },
+                { type: "strike", label: "Strikethrough", icon: Strikethrough },
+                { type: "code", label: "Inline code", icon: Code2 },
+                { type: "codeBlock", label: "Code block", icon: Code2 },
+              ].map(({ type, label, icon: Icon }) => (
+                <button
+                  key={type}
+                  type="button"
+                  aria-label={label}
+                  title={label}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => applyFormatting(type)}
+                  disabled={uploading || sending}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--surface-hover)] hover:text-indigo-500 disabled:opacity-40"
+                >
+                  <Icon size={16} />
+                </button>
+              ))}
               {selectedFiles.length > 0 && (
                 <span className="ml-1 text-[11px] text-[var(--muted)]">
                   {selectedFiles.length}/{MAX_FILES} files
@@ -608,12 +889,13 @@ export default function MessageComposer({
         </div>
 
         <p className="mt-2 hidden text-center text-[11px] text-[var(--muted)] sm:block">
-          Type @ to mention a teammate · Enter to send · Shift + Enter for a new line
+          Type @ to mention a teammate {"\u00B7"} Enter to send {"\u00B7"} Shift + Enter for a new line
         </p>
       </div>
     </form>
   );
 }
+
 
 
 

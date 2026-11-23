@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { memo, useEffect, useRef, useState } from "react";
 import { AnimatePresence, m as motion } from "motion/react";
 import {
   Smile,
@@ -17,7 +17,7 @@ import {
   CheckCheck
 } from "lucide-react";
 
-const EMOJIS = ["??", "??", "??", "??", "??", "??"];
+const EMOJIS = ["\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F389}", "\u{1F440}", "\u{1F680}"];
 
 const formatFileSize = (bytes = 0) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -30,8 +30,10 @@ const isImageAttachment = (file) =>
   file.resourceType === "image";
 
 
-export default function MessageBubble({
+function MessageBubble({
   message,
+  workspaceId,
+  channelId,
   isOwn = false,
   onEdit,
   onDelete,
@@ -65,44 +67,163 @@ export default function MessageBubble({
     : null;
 
   const renderMessageContent = () => {
-    if (!mentionRegex || message.deletedAt) return content;
+    if (message.deletedAt) return content;
 
+    const renderPlainText = (text, prefix) => {
+      if (!mentionRegex) return text;
+
+      const parts = [];
+      let lastIndex = 0;
+      let match;
+      let index = 0;
+
+      mentionRegex.lastIndex = 0;
+
+      while ((match = mentionRegex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          parts.push(text.slice(lastIndex, match.index));
+        }
+
+        parts.push(
+          <span
+            key={`${prefix}-mention-${index++}`}
+            className={
+              isOwn
+                ? "rounded-md bg-white/15 px-1 font-semibold text-white underline decoration-white/50 underline-offset-2"
+                : "rounded-md bg-indigo-500/10 px-1 font-semibold text-indigo-500"
+            }
+          >
+            @{match[1]}
+          </span>
+        );
+
+        lastIndex = match.index + match[0].length;
+      }
+
+      if (lastIndex < text.length) {
+        parts.push(text.slice(lastIndex));
+      }
+
+      return parts.length ? parts : text;
+    };
+
+    const renderInline = (text, prefix) => {
+      const regex = /(\*\*[^*\n]+\*\*|~~[^~\n]+~~|`[^`\n]+`|\*[^*\n]+\*)/g;
+
+      const parts = [];
+      let lastIndex = 0;
+      let match;
+      let index = 0;
+
+      const addPlain = (value, key) => {
+        const result = renderPlainText(value, key);
+        parts.push(...(Array.isArray(result) ? result : [result]));
+      };
+
+      while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          addPlain(text.slice(lastIndex, match.index), `${prefix}-${index}`);
+        }
+
+        const token = match[0];
+        const key = `${prefix}-format-${index++}`;
+
+        if (token.startsWith("**")) {
+          parts.push(
+            <strong key={key} className="font-bold">
+              {token.slice(2, -2)}
+            </strong>
+          );
+        } else if (token.startsWith("~~")) {
+          parts.push(
+            <del key={key}>
+              {token.slice(2, -2)}
+            </del>
+          );
+        } else if (token.startsWith("`")) {
+          parts.push(
+            <code
+              key={key}
+              className={`rounded-md px-1.5 py-0.5 font-mono text-[0.9em] ${
+                isOwn
+                  ? "bg-white/15 text-white"
+                  : "bg-indigo-500/10 text-indigo-500"
+              }`}
+            >
+              {token.slice(1, -1)}
+            </code>
+          );
+        } else {
+          parts.push(
+            <em key={key} className="italic">
+              {token.slice(1, -1)}
+            </em>
+          );
+        }
+
+        lastIndex = match.index + token.length;
+      }
+
+      if (lastIndex < text.length) {
+        addPlain(text.slice(lastIndex), `${prefix}-last`);
+      }
+
+      if (!parts.length) {
+        return renderPlainText(text, prefix);
+      }
+
+      return parts;
+    };
+
+    const codeBlockRegex = /```([^\n`]*)\r?\n([\s\S]*?)```/g;
     const parts = [];
     let lastIndex = 0;
     let match;
     let index = 0;
 
-    mentionRegex.lastIndex = 0;
-
-    while ((match = mentionRegex.exec(content)) !== null) {
+    while ((match = codeBlockRegex.exec(content)) !== null) {
       if (match.index > lastIndex) {
-        parts.push(content.slice(lastIndex, match.index));
+        parts.push(
+          <span key={`text-${index}`}>
+            {renderInline(
+              content.slice(lastIndex, match.index),
+              `inline-${index}`
+            )}
+          </span>
+        );
       }
 
+      const code = match[2].replace(/\r?\n$/, "");
+
       parts.push(
-        <span
-          key={`mention-${index++}`}
-          className={
+        <pre
+          key={`code-block-${index}`}
+          className={`my-2 max-w-full overflow-x-auto rounded-xl border p-3 text-left ${
             isOwn
-              ? "rounded-md bg-white/15 px-1 font-semibold text-white underline decoration-white/50 underline-offset-2"
-              : "rounded-md bg-indigo-500/10 px-1 font-semibold text-indigo-500"
-          }
+              ? "border-white/15 bg-black/20"
+              : "border-[var(--border)] bg-[var(--bg)]"
+          }`}
         >
-          @{match[1]}
-        </span>
+          <code className="font-mono text-xs leading-6 sm:text-sm">
+            {code}
+          </code>
+        </pre>
       );
 
       lastIndex = match.index + match[0].length;
+      index++;
     }
 
     if (lastIndex < content.length) {
-      parts.push(content.slice(lastIndex));
+      parts.push(
+        <span key={`text-${index}`}>
+          {renderInline(content.slice(lastIndex), `inline-${index}`)}
+        </span>
+      );
     }
 
-    return parts.length ? parts : content;
+    return parts.length ? parts : renderInline(content, "inline");
   };
-
-
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
   const [saving, setSaving] = useState(false);
@@ -161,8 +282,15 @@ export default function MessageBubble({
   };
 
   const handleCopyLink = () => {
-    const url = new URL(window.location.href);
+    if (!workspaceId || !channelId || !message._id) return;
+
+    const url = new URL(window.location.origin);
+
+    url.pathname = "/";
+    url.searchParams.set("workspaceId", workspaceId);
+    url.searchParams.set("channelId", channelId);
     url.hash = `message-${message._id}`;
+
     copyText(url.toString(), "link");
   };
   const date = message.createdAt ? new Date(message.createdAt) : null;
@@ -273,7 +401,7 @@ export default function MessageBubble({
                 <img
                   src={file.url}
                   alt={file.name}
-                  loading="lazy"
+                  loading="eager"
                   className="max-h-72 w-full object-cover transition duration-300 hover:scale-[1.02]"
                 />
               </a>
@@ -414,7 +542,7 @@ export default function MessageBubble({
           ) : (
             <motion.div
               key="content"
-              className={`rounded-2xl px-3 py-2.5 text-left text-[13px] leading-5 sm:px-4 sm:py-3 sm:text-sm sm:leading-6 ${
+              className={`rounded-2xl px-3 py-2.5 text-left text-[13px] leading-5 whitespace-pre-wrap break-words sm:px-4 sm:py-3 sm:text-sm sm:leading-6 ${
                 isDeleted
                   ? "rounded-tl-sm border border-[var(--border)] bg-[var(--surface)] italic text-[var(--muted)]"
                   : isOwn
@@ -698,6 +826,41 @@ export default function MessageBubble({
 
 
 
+
+
+
+
+
+
+function areMessageBubblePropsEqual(previous, next) {
+  const previousSeenBy = previous.seenBy || [];
+  const nextSeenBy = next.seenBy || [];
+
+  const sameSeenBy =
+    previousSeenBy.length === nextSeenBy.length &&
+    previousSeenBy.every((user, index) => {
+      const previousId = user?._id || user?.id || user;
+      const nextUser = nextSeenBy[index];
+      const nextId = nextUser?._id || nextUser?.id || nextUser;
+
+      return String(previousId) === String(nextId);
+    });
+
+  return (
+    previous.message === next.message &&
+    previous.isOwn === next.isOwn &&
+    previous.currentUserId === next.currentUserId &&
+    previous.members === next.members &&
+    previous.onEdit === next.onEdit &&
+    previous.onDelete === next.onDelete &&
+    previous.onReply === next.onReply &&
+    previous.onJumpToMessage === next.onJumpToMessage &&
+    previous.onReact === next.onReact &&
+    sameSeenBy
+  );
+}
+
+export default memo(MessageBubble, areMessageBubblePropsEqual);
 
 
 

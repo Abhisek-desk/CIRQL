@@ -9,6 +9,8 @@ export default function ChatMessages({
   typingUsers = [],
   channelReadStates = [],
   channel,
+  workspaceId,
+  channelId,
   currentUserId,
   members = [],
   highlightMessageId,
@@ -19,14 +21,14 @@ export default function ChatMessages({
   onJumpToMessage,
   onReactMessage,
 }) {
-  const bottomRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const lastMessageIdRef = useRef(null);
   const [highlightedId, setHighlightedId] = useState(null);
 
-  // Scroll to the latest message on initial load and when a new message arrives.
+  // Keep the conversation pinned to the latest message during initial loading.
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
-    const lastMessageId = lastMessage?._id || lastMessage?.id || null;
+    const lastMessageId = lastMessage?._id || lastMessage?.id;
 
     if (!lastMessageId) {
       lastMessageIdRef.current = null;
@@ -37,16 +39,86 @@ export default function ChatMessages({
     const isNewMessage =
       String(lastMessageId) !== String(lastMessageIdRef.current);
 
-    if (isInitialLoad || isNewMessage) {
-      requestAnimationFrame(() => {
-        bottomRef.current?.scrollIntoView({
-          behavior: isInitialLoad ? "auto" : "smooth",
+    if ((!isInitialLoad && !isNewMessage) || highlightMessageId) return;
+
+    const container = scrollContainerRef.current;
+    const content = container?.firstElementChild;
+
+    if (!container || !content) return;
+
+    let active = true;
+    let frameOne;
+    let frameTwo;
+
+    const scrollToBottom = () => {
+      if (!active) return;
+
+      container.scrollTop = container.scrollHeight;
+      lastMessageIdRef.current = lastMessageId;
+    };
+
+    // Scroll after React commits and the browser calculates layout.
+    const scheduleScroll = () => {
+      frameOne = requestAnimationFrame(() => {
+        scrollToBottom();
+
+        frameTwo = requestAnimationFrame(() => {
+          scrollToBottom();
         });
       });
+    };
+
+    scheduleScroll();
+
+    // Observe the actual message-list height, including image resizing.
+    let resizeObserver;
+
+    if (isInitialLoad && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        scrollToBottom();
+      });
+
+      resizeObserver.observe(content);
     }
 
-    lastMessageIdRef.current = lastMessageId;
-  }, [messages]);
+    // Also handle images that finish loading after the initial render.
+    const images = [...content.querySelectorAll("img")];
+
+    const handleImageLoad = () => {
+      scheduleScroll();
+    };
+
+    images.forEach((img) => {
+      if (!img.complete) {
+        img.addEventListener("load", handleImageLoad);
+        img.addEventListener("error", handleImageLoad);
+      } else if (img.naturalWidth > 0) {
+        img.decode?.().then(scheduleScroll).catch(() => {});
+      }
+    });
+
+    const cleanupTimer = setTimeout(() => {
+      resizeObserver?.disconnect();
+
+      images.forEach((img) => {
+        img.removeEventListener("load", handleImageLoad);
+        img.removeEventListener("error", handleImageLoad);
+      });
+    }, isInitialLoad ? 8000 : 1000);
+
+    return () => {
+      active = false;
+      clearTimeout(cleanupTimer);
+      cancelAnimationFrame(frameOne);
+      cancelAnimationFrame(frameTwo);
+      resizeObserver?.disconnect();
+
+      images.forEach((img) => {
+        img.removeEventListener("load", handleImageLoad);
+        img.removeEventListener("error", handleImageLoad);
+      });
+    };
+  }, [messages, highlightMessageId]);
 
   // Scroll to and temporarily highlight a selected search result.
   useEffect(() => {
@@ -83,7 +155,7 @@ const channelName = channel?.name || "channel";
   const typingNames = typingUsers.map((item) => item.name);
 
   return (
-    <div className="custom-scrollbar flex-1 overflow-y-auto py-5">
+    <div ref={scrollContainerRef} className="custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto py-5">
       <div className="mx-auto max-w-4xl">
         <div className="mb-8 px-5">
           <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/10 text-2xl text-indigo-500">
@@ -187,6 +259,8 @@ const channelName = channel?.name || "channel";
             >
               <MessageBubble
                 message={message}
+                workspaceId={workspaceId}
+                channelId={channelId}
                 seenBy={seenBy}
                 isOwn={Boolean(isOwn)}
                 currentUserId={currentUserId}
@@ -208,15 +282,11 @@ const channelName = channel?.name || "channel";
           )}
         </AnimatePresence>
 
-        <div ref={bottomRef} />
+        
       </div>
     </div>
   );
 }
-
-
-
-
 
 
 
