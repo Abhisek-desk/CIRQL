@@ -1,4 +1,4 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
 import Message from "../models/Message.js";
 import { createMessage } from "../services/messageService.js";
 import { getAccessibleChannel } from "../services/channelAccess.js";
@@ -30,6 +30,7 @@ export const sendMessage = async (req, res, next) => {
     }
 
     if (error.message.includes("cannot be empty") ||
+        error.message.includes("must contain text") ||
         error.message.includes("exceed") ||
         error.message.includes("Invalid reply")) {
       return res.status(400).json({
