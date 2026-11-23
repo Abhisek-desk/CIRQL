@@ -5,7 +5,6 @@ import {
   ChevronDown,
   Lock,
   Users,
-  MessageCircle,
 } from "lucide-react";
 
 import ProfileMenu from "../common/ProfileMenu";

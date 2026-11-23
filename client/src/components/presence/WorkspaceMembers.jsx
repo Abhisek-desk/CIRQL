@@ -1,5 +1,5 @@
 ﻿import { m as motion } from "motion/react";
-import { Users, Circle } from "lucide-react";
+import { Users, Circle, MessageCircle } from "lucide-react";
 import PresenceIndicator from "./PresenceIndicator";
 
 function formatLastSeen(value) {
@@ -20,16 +20,20 @@ function formatLastSeen(value) {
 export default function WorkspaceMembers({
   members = [],
   onlineUsers = [],
+  currentUserId,
+  onSelectMember,
 }) {
   const onlineSet = new Set(onlineUsers.map(String));
 
-  const sortedMembers = [...members].sort((a, b) => {
-    const aOnline = onlineSet.has(String(a._id));
-    const bOnline = onlineSet.has(String(b._id));
+  const sortedMembers = [...members]
+    .filter((member) => String(member._id) !== String(currentUserId))
+    .sort((a, b) => {
+      const aOnline = onlineSet.has(String(a._id));
+      const bOnline = onlineSet.has(String(b._id));
 
-    if (aOnline !== bOnline) return aOnline ? -1 : 1;
-    return (a.name || "").localeCompare(b.name || "");
-  });
+      if (aOnline !== bOnline) return aOnline ? -1 : 1;
+      return (a.name || "").localeCompare(b.name || "");
+    });
 
   const onlineMembers = sortedMembers.filter((member) =>
     onlineSet.has(String(member._id)),
@@ -40,25 +44,31 @@ export default function WorkspaceMembers({
   );
 
   const renderMember = (member, index, online) => (
-    <motion.div
+    <motion.button
       key={member._id}
+      type="button"
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.025 }}
-      className="flex items-center gap-3 rounded-xl px-2.5 py-2 transition hover:bg-[var(--surface-hover)]"
+      onClick={() => onSelectMember?.(member)}
+      title={`Message ${member.name || "member"}`}
+      className="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition hover:bg-[var(--surface-hover)]"
     >
       <div className="relative h-9 w-9 shrink-0">
         {member.avatar ? (
           <img
             src={member.avatar}
             alt=""
-            className={`h-9 w-9 rounded-full object-cover ${online ? "" : "grayscale-[35%] opacity-80"}`}
+            className={`h-9 w-9 rounded-full object-cover ${
+              online ? "" : "grayscale-[35%] opacity-80"
+            }`}
           />
         ) : (
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white">
             {(member.name || "U").slice(0, 1).toUpperCase()}
           </div>
         )}
+
         <PresenceIndicator online={online} />
       </div>
 
@@ -67,8 +77,11 @@ export default function WorkspaceMembers({
           <p className="truncate text-sm font-medium text-[var(--text)]">
             {member.name || "Unknown member"}
           </p>
+
           {member.customStatusEmoji && (
-            <span className="shrink-0 text-xs">{member.customStatusEmoji}</span>
+            <span className="shrink-0 text-xs">
+              {member.customStatusEmoji}
+            </span>
           )}
         </div>
 
@@ -83,20 +96,19 @@ export default function WorkspaceMembers({
         </p>
       </div>
 
-      {member.role && member.role !== "member" && (
-        <span className="shrink-0 rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-indigo-500">
-          {member.role}
-        </span>
-      )}
-    </motion.div>
+      <MessageCircle
+        size={15}
+        className="shrink-0 text-[var(--muted)] opacity-0 transition group-hover:opacity-100"
+      />
+    </motion.button>
   );
 
-  if (!members.length) {
+  if (!sortedMembers.length) {
     return (
       <div className="px-3 py-6 text-center">
         <Users size={22} className="mx-auto mb-2 text-[var(--muted)]" />
         <p className="text-xs text-[var(--muted)]">
-          Workspace members will appear here.
+          No other workspace members yet.
         </p>
       </div>
     );
@@ -111,6 +123,7 @@ export default function WorkspaceMembers({
           </span>
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
         </div>
+
         {onlineMembers.length ? (
           <div className="space-y-0.5">
             {onlineMembers.map((member, index) =>
@@ -132,6 +145,7 @@ export default function WorkspaceMembers({
               Offline — {offlineMembers.length}
             </span>
           </div>
+
           <div className="space-y-0.5">
             {offlineMembers.map((member, index) =>
               renderMember(member, index, false),
@@ -142,4 +156,3 @@ export default function WorkspaceMembers({
     </div>
   );
 }
-

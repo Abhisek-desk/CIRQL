@@ -287,7 +287,3 @@ const channelName = channel?.name || "channel";
     </div>
   );
 }
-
-
-
-
