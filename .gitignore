@@ -8,3 +8,6 @@ coverage/
 *.log
 !server/.env.example
 !client/.env.example
+test-results/
+playwright-report/
+playwright/.cache/

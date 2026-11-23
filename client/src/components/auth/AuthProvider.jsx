@@ -1,10 +1,53 @@
 ﻿import { useEffect } from "react";
 import { useDispatch } from "react-redux";
+
 import authService from "../../services/authService";
+
 import {
   setCredentials,
   logout,
 } from "../../features/auth/authSlice";
+
+// Share session restoration between React Strict Mode effect executions.
+let sessionRestorePromise = null;
+
+const restoreSession = () => {
+  if (!sessionRestorePromise) {
+    sessionRestorePromise = (async () => {
+      // No access token means there is no known active session.
+      // Do not unnecessarily call the refresh endpoint.
+      const existingToken = localStorage.getItem("cirql-access-token");
+
+      if (!existingToken) {
+        return null;
+      }
+
+      try {
+        // If the token is valid, getMe succeeds.
+        // If expired, the Axios interceptor attempts one refresh.
+        const response = await authService.getMe();
+
+        // Read again because Axios may have refreshed the token.
+        const latestToken = localStorage.getItem("cirql-access-token");
+
+        if (!latestToken || !response.user) {
+          return null;
+        }
+
+        return {
+          user: response.user,
+          accessToken: latestToken,
+        };
+      } catch {
+        return null;
+      }
+    })().finally(() => {
+      sessionRestorePromise = null;
+    });
+  }
+
+  return sessionRestorePromise;
+};
 
 export default function AuthProvider({ children }) {
   const dispatch = useDispatch();
@@ -12,52 +55,24 @@ export default function AuthProvider({ children }) {
   useEffect(() => {
     let active = true;
 
-    const restoreSession = async () => {
-      try {
-        let token = localStorage.getItem("cirql-access-token");
+    const initializeSession = async () => {
+      const session = await restoreSession();
 
-        if (token) {
-          try {
-            const response = await authService.getMe();
+      if (!active) return;
 
-            if (active) {
-              dispatch(setCredentials({
-                user: response.user,
-                accessToken: token,
-              }));
-            }
-
-            return;
-          } catch {
-            // The access token may have expired. Try the refresh cookie.
-          }
-        }
-
-        const refreshResponse = await authService.refresh();
-        token = refreshResponse.accessToken;
-
-        if (!token) {
-          throw new Error("Session refresh failed");
-        }
-
-        localStorage.setItem("cirql-access-token", token);
-
-        const userResponse = await authService.getMe();
-
-        if (active) {
-          dispatch(setCredentials({
-            user: userResponse.user,
-            accessToken: token,
-          }));
-        }
-      } catch {
-        if (active) {
-          dispatch(logout());
-        }
+      if (session) {
+        dispatch(
+          setCredentials({
+            user: session.user,
+            accessToken: session.accessToken,
+          }),
+        );
+      } else {
+        dispatch(logout());
       }
     };
 
-    restoreSession();
+    initializeSession();
 
     const handleExpired = () => {
       dispatch(logout());
@@ -67,10 +82,13 @@ export default function AuthProvider({ children }) {
 
     return () => {
       active = false;
-      window.removeEventListener("cirql:auth-expired", handleExpired);
+
+      window.removeEventListener(
+        "cirql:auth-expired",
+        handleExpired,
+      );
     };
   }, [dispatch]);
 
   return children;
 }
-

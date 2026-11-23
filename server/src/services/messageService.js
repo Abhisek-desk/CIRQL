@@ -3,6 +3,7 @@ import Message from "../models/Message.js";
 import { getAccessibleChannel } from "./channelAccess.js";
 import Workspace from "../models/Workspace.js";
 import { createNotification } from "./notificationService.js";
+import { validateAttachments } from "../utils/fileValidation.js";
 
 export const createMessage = async ({
   channelId,
@@ -33,28 +34,7 @@ export const createMessage = async ({
     throw new Error("A message can contain at most 5 attachments");
   }
 
-  const validAttachments = attachments.map((file) => {
-    if (
-      !file ||
-      typeof file.url !== "string" ||
-      typeof file.publicId !== "string" ||
-      typeof file.name !== "string" ||
-      !Number.isFinite(file.size) ||
-      file.size <= 0
-    ) {
-      throw new Error("Invalid attachment data");
-    }
-
-    return {
-      url: file.url,
-      publicId: file.publicId,
-      name: file.name.slice(0, 255),
-      format: file.format || "",
-      size: file.size,
-      resourceType: file.resourceType || "raw",
-      mimeType: file.mimeType || "",
-    };
-  });
+  const validAttachments = validateAttachments(attachments);
 
   if (replyTo) {
     if (!mongoose.Types.ObjectId.isValid(replyTo)) {

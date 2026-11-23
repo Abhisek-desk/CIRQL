@@ -16,6 +16,8 @@ import DirectMessage from "../models/DirectMessage.js";
 import Conversation from "../models/Conversation.js";
 import { createNotification } from "../services/notificationService.js";
 
+import { validateAttachments } from "../utils/fileValidation.js";
+
 let io;
 
 export const initializeSocketServer = (httpServer) => {
@@ -35,7 +37,10 @@ export const initializeSocketServer = (httpServer) => {
         return next(new Error("Authentication required"));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_ACCESS_SECRET,
+      );
 
       const user = await User.findById(decoded.sub);
 
@@ -63,7 +68,6 @@ export const initializeSocketServer = (httpServer) => {
     // ONLINE PRESENCE
     addOnlineUser(userId, socket.id);
 
-    // Send the current online users to the newly connected client.
     socket.emit("presence:sync", {
       onlineUsers: getOnlineUsers(),
     });
@@ -140,23 +144,34 @@ export const initializeSocketServer = (httpServer) => {
 
         if (
           typeof content !== "string" ||
-          content.length > 5000 ||
-          !Array.isArray(attachments) ||
-          attachments.length > 5
+          content.length > 5000
         ) {
           return callback?.({
             success: false,
-            message: "Invalid message content or attachments",
+            message: "Invalid message content",
           });
         }
 
-        if (!content.trim() && attachments.length === 0) {
+        // Validate attachment metadata.
+        let validAttachments;
+
+        try {
+          validAttachments = validateAttachments(attachments);
+        } catch (validationError) {
+          return callback?.({
+            success: false,
+            message: validationError.message,
+          });
+        }
+
+        if (!content.trim() && validAttachments.length === 0) {
           return callback?.({
             success: false,
             message: "Message cannot be empty",
           });
         }
 
+        // Validate reply target.
         if (replyTo) {
           const originalMessage = await DirectMessage.findOne({
             _id: replyTo,
@@ -172,19 +187,21 @@ export const initializeSocketServer = (httpServer) => {
           }
         }
 
+        // Create direct message using validated attachments.
         const message = await DirectMessage.create({
           conversation: conversationId,
           sender: socket.user._id,
           content: content.trim(),
           replyTo,
-          attachments,
+          attachments: validAttachments,
         });
 
         conversation.lastMessage = message._id;
         conversation.lastMessageAt = message.createdAt;
 
         const readState = conversation.readStates.find(
-          (state) => String(state.user) === String(socket.user._id)
+          (state) =>
+            String(state.user) === String(socket.user._id),
         );
 
         if (readState) {
@@ -211,31 +228,38 @@ export const initializeSocketServer = (httpServer) => {
 
         const recipientId = conversation.participants.find(
           (participant) =>
-            String(participant) !== String(socket.user._id)
+            String(participant) !== String(socket.user._id),
         );
 
-        
+        // Create notification.
         if (recipientId) {
           try {
             await createNotification({
               recipient: recipientId,
               sender: socket.user._id,
-              type: replyTo ? "direct_message_reply" : "direct_message",
+              type: replyTo
+                ? "direct_message_reply"
+                : "direct_message",
               directMessage: message._id,
               conversation: conversation._id,
               content: content.trim() || "Sent an attachment",
             });
           } catch (notificationError) {
-            console.error("DM notification error:", notificationError.message);
+            console.error(
+              "DM notification error:",
+              notificationError.message,
+            );
           }
         }
 
-// Send to conversation members and their other connected devices.
-        // The sender's current socket is excluded; its acknowledgement
-        // supplies the newly created message.
-        socket.to(`conversation:${conversationId}`)
-          .to(`user:${recipientId}`)
-          .emit("dm:message:new", message);
+        // Send to conversation members and their other connected devices.
+        // The sender's current socket is excluded.
+        if (recipientId) {
+          socket
+            .to(`conversation:${conversationId}`)
+            .to(`user:${recipientId}`)
+            .emit("dm:message:new", message);
+        }
 
         callback?.({
           success: true,
@@ -265,7 +289,7 @@ export const initializeSocketServer = (httpServer) => {
             conversationId,
             userId,
             name: socket.user.name,
-          }
+          },
         );
       } catch (error) {
         console.error("DM typing start error:", error.message);
@@ -287,7 +311,7 @@ export const initializeSocketServer = (httpServer) => {
           {
             conversationId,
             userId,
-          }
+          },
         );
       } catch (error) {
         console.error("DM typing stop error:", error.message);
@@ -312,7 +336,7 @@ export const initializeSocketServer = (httpServer) => {
 
         io.to(`conversation:${message.conversation}`).emit(
           "dm:message:updated",
-          message
+          message,
         );
       } catch (error) {
         console.error("DM update broadcast error:", error.message);
@@ -340,7 +364,7 @@ export const initializeSocketServer = (httpServer) => {
             conversation: message.conversation,
             content: message.content,
             deletedAt: message.deletedAt,
-          }
+          },
         );
       } catch (error) {
         console.error("DM delete broadcast error:", error.message);
@@ -348,10 +372,14 @@ export const initializeSocketServer = (httpServer) => {
     });
 
     // ================= END DIRECT MESSAGES =================
+
     // JOIN CHANNEL
     socket.on("channel:join", async (channelId, callback) => {
       try {
-        const access = await getAccessibleChannel(channelId, socket.user._id);
+        const access = await getAccessibleChannel(
+          channelId,
+          socket.user._id,
+        );
 
         if (!access) {
           return callback?.({
@@ -379,10 +407,16 @@ export const initializeSocketServer = (httpServer) => {
       socket.leave(`channel:${channelId}`);
     });
 
-    // SEND MESSAGE
+    // SEND CHANNEL MESSAGE
     socket.on("message:send", async (payload, callback) => {
       try {
-        const { channelId, content, replyTo, mentionIds, attachments } = payload || {};
+        const {
+          channelId,
+          content,
+          replyTo,
+          mentionIds,
+          attachments,
+        } = payload || {};
 
         const message = await createMessage({
           channelId,
@@ -390,7 +424,7 @@ export const initializeSocketServer = (httpServer) => {
           content,
           replyTo,
           mentionIds,
-        attachments,
+          attachments,
         });
 
         io.to(`channel:${channelId}`).emit("message:new", message);
@@ -424,7 +458,10 @@ export const initializeSocketServer = (httpServer) => {
 
         if (!access) return;
 
-        io.to(`channel:${message.channel}`).emit("message:updated", message);
+        io.to(`channel:${message.channel}`).emit(
+          "message:updated",
+          message,
+        );
       } catch (error) {
         console.error("Message update broadcast error:", error.message);
       }
@@ -444,12 +481,15 @@ export const initializeSocketServer = (httpServer) => {
 
         if (!access) return;
 
-        io.to(`channel:${message.channel}`).emit("message:deleted", {
-          _id: message._id,
-          channel: message.channel,
-          content: message.content,
-          deletedAt: message.deletedAt,
-        });
+        io.to(`channel:${message.channel}`).emit(
+          "message:deleted",
+          {
+            _id: message._id,
+            channel: message.channel,
+            content: message.content,
+            deletedAt: message.deletedAt,
+          },
+        );
       } catch (error) {
         console.error("Message delete broadcast error:", error.message);
       }
@@ -458,7 +498,10 @@ export const initializeSocketServer = (httpServer) => {
     // TYPING START
     socket.on("typing:start", async (channelId) => {
       try {
-        const access = await getAccessibleChannel(channelId, socket.user._id);
+        const access = await getAccessibleChannel(
+          channelId,
+          socket.user._id,
+        );
 
         if (!access) return;
 
@@ -475,7 +518,10 @@ export const initializeSocketServer = (httpServer) => {
     // TYPING STOP
     socket.on("typing:stop", async (channelId) => {
       try {
-        const access = await getAccessibleChannel(channelId, socket.user._id);
+        const access = await getAccessibleChannel(
+          channelId,
+          socket.user._id,
+        );
 
         if (!access) return;
 

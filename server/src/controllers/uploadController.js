@@ -1,4 +1,5 @@
 ﻿import cloudinary from "../config/cloudinary.js";
+import { validateFileSignature } from "../utils/fileValidation.js";
 
 export const uploadFile = async (req, res, next) => {
   try {
@@ -9,8 +10,16 @@ export const uploadFile = async (req, res, next) => {
       });
     }
 
+    if (!validateFileSignature(req.file)) {
+      return res.status(400).json({
+        success: false,
+        message: "File content does not match a supported file type",
+      });
+    }
+
     const originalName = req.file.originalname
       .replace(/[\/\\]/g, "_")
+      .replace(/[\x00-\x1f\x7f]/g, "")
       .slice(0, 255);
 
     const isImage = req.file.mimetype.startsWith("image/");
@@ -50,21 +59,12 @@ export const uploadFile = async (req, res, next) => {
       },
     });
   } catch (error) {
+    // Avoid logging provider response bodies or sensitive configuration.
     console.error("[CLOUDINARY UPLOAD ERROR]", {
-  message: error.message,
-  http_code: error.http_code,
-  name: error.name,
-  cloudinaryMessage:
-    error.error?.message ||
-    error.response?.data?.error?.message ||
-    error.response?.body?.error?.message ||
-    null,
-  responseBody: error.response?.body || null,
-});
+      name: error.name,
+      code: error.http_code || "UPLOAD_FAILED",
+    });
 
     next(error);
   }
 };
-
-
-

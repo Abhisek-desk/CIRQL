@@ -8,6 +8,8 @@ import {
   getAccessibleConversation,
 } from "../services/conversationService.js";
 
+import { validateAttachments } from "../utils/fileValidation.js";
+
 // START OR GET CONVERSATION
 export const startConversation = async (req, res) => {
   try {
@@ -15,7 +17,7 @@ export const startConversation = async (req, res) => {
 
     const conversation = await createOrGetConversation(
       req.user._id,
-      recipientId
+      recipientId,
     );
 
     return res.status(200).json({
@@ -39,7 +41,7 @@ export const getMyConversations = async (req, res, next) => {
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .populate(
         "participants",
-        "name email avatar lastSeen customStatusText customStatusEmoji customStatusExpiresAt"
+        "name email avatar lastSeen customStatusText customStatusEmoji customStatusExpiresAt",
       )
       .populate({
         path: "lastMessage",
@@ -56,11 +58,11 @@ export const getMyConversations = async (req, res, next) => {
 
         const otherParticipant = data.participants.find(
           (participant) =>
-            String(participant._id) !== String(req.user._id)
+            String(participant._id) !== String(req.user._id),
         );
 
         const myReadState = data.readStates.find(
-          (state) => String(state.user) === String(req.user._id)
+          (state) => String(state.user) === String(req.user._id),
         );
 
         const unreadFilter = {
@@ -75,16 +77,14 @@ export const getMyConversations = async (req, res, next) => {
           };
         }
 
-        const unreadCount = await DirectMessage.countDocuments(
-          unreadFilter
-        );
+        const unreadCount = await DirectMessage.countDocuments(unreadFilter);
 
         return {
           ...data,
           otherParticipant,
           unreadCount,
         };
-      })
+      }),
     );
 
     return res.status(200).json({
@@ -102,7 +102,7 @@ export const getConversation = async (req, res, next) => {
   try {
     const conversation = await getAccessibleConversation(
       req.params.conversationId,
-      req.user._id
+      req.user._id,
     );
 
     if (!conversation) {
@@ -114,7 +114,7 @@ export const getConversation = async (req, res, next) => {
 
     await conversation.populate(
       "participants",
-      "name email avatar lastSeen customStatusText customStatusEmoji customStatusExpiresAt"
+      "name email avatar lastSeen customStatusText customStatusEmoji customStatusExpiresAt",
     );
 
     await conversation.populate({
@@ -142,7 +142,7 @@ export const getDirectMessages = async (req, res, next) => {
 
     const conversation = await getAccessibleConversation(
       conversationId,
-      req.user._id
+      req.user._id,
     );
 
     if (!conversation) {
@@ -154,7 +154,7 @@ export const getDirectMessages = async (req, res, next) => {
 
     const pageLimit = Math.min(
       Math.max(parseInt(limit, 10) || 30, 1),
-      50
+      50,
     );
 
     const query = {
@@ -210,6 +210,7 @@ export const getDirectMessages = async (req, res, next) => {
 export const sendDirectMessage = async (req, res, next) => {
   try {
     const { conversationId } = req.params;
+
     const {
       content = "",
       replyTo = null,
@@ -218,7 +219,7 @@ export const sendDirectMessage = async (req, res, next) => {
 
     const conversation = await getAccessibleConversation(
       conversationId,
-      req.user._id
+      req.user._id,
     );
 
     if (!conversation) {
@@ -228,33 +229,33 @@ export const sendDirectMessage = async (req, res, next) => {
       });
     }
 
-    if (
-      typeof content !== "string" ||
-      content.length > 5000
-    ) {
+    if (typeof content !== "string" || content.length > 5000) {
       return res.status(400).json({
         success: false,
         message: "Message cannot exceed 5000 characters",
       });
     }
 
-    if (
-      !Array.isArray(attachments) ||
-      attachments.length > 5
-    ) {
+    // Validate attachment metadata before saving.
+    let validAttachments;
+
+    try {
+      validAttachments = validateAttachments(attachments);
+    } catch (validationError) {
       return res.status(400).json({
         success: false,
-        message: "A message can contain at most 5 attachments",
+        message: validationError.message,
       });
     }
 
-    if (!content.trim() && attachments.length === 0) {
+    if (!content.trim() && validAttachments.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Message cannot be empty",
       });
     }
 
+    // Validate reply target.
     if (replyTo) {
       if (!mongoose.Types.ObjectId.isValid(replyTo)) {
         return res.status(400).json({
@@ -277,19 +278,20 @@ export const sendDirectMessage = async (req, res, next) => {
       }
     }
 
+    // Create message using validated attachments.
     const message = await DirectMessage.create({
       conversation: conversationId,
       sender: req.user._id,
       content: content.trim(),
       replyTo,
-      attachments,
+      attachments: validAttachments,
     });
 
     conversation.lastMessage = message._id;
     conversation.lastMessageAt = message.createdAt;
 
     const senderReadState = conversation.readStates.find(
-      (state) => String(state.user) === String(req.user._id)
+      (state) => String(state.user) === String(req.user._id),
     );
 
     if (senderReadState) {
@@ -314,23 +316,29 @@ export const sendDirectMessage = async (req, res, next) => {
       },
     });
 
-
     const recipientId = conversation.participants.find(
-      (participant) => String(participant) !== String(req.user._id)
+      (participant) =>
+        String(participant) !== String(req.user._id),
     );
 
+    // Create notification.
     if (recipientId) {
       try {
         await createNotification({
           recipient: recipientId,
           sender: req.user._id,
-          type: replyTo ? "direct_message_reply" : "direct_message",
+          type: replyTo
+            ? "direct_message_reply"
+            : "direct_message",
           directMessage: message._id,
           conversation: conversation._id,
           content: content.trim() || "Sent an attachment",
         });
       } catch (notificationError) {
-        console.error("DM notification error:", notificationError.message);
+        console.error(
+          "DM notification error:",
+          notificationError.message,
+        );
       }
     }
 
@@ -372,7 +380,7 @@ export const editDirectMessage = async (req, res, next) => {
 
     const conversation = await getAccessibleConversation(
       message.conversation,
-      req.user._id
+      req.user._id,
     );
 
     if (!conversation) {
@@ -408,9 +416,7 @@ export const editDirectMessage = async (req, res, next) => {
 // DELETE DIRECT MESSAGE
 export const deleteDirectMessage = async (req, res, next) => {
   try {
-    const message = await DirectMessage.findById(
-      req.params.messageId
-    );
+    const message = await DirectMessage.findById(req.params.messageId);
 
     if (!message || message.deletedAt) {
       return res.status(404).json({
@@ -421,7 +427,7 @@ export const deleteDirectMessage = async (req, res, next) => {
 
     const conversation = await getAccessibleConversation(
       message.conversation,
-      req.user._id
+      req.user._id,
     );
 
     if (!conversation) {
@@ -443,15 +449,14 @@ export const deleteDirectMessage = async (req, res, next) => {
 
     await message.save();
 
-    if (
-      String(conversation.lastMessage) === String(message._id)
-    ) {
+    if (String(conversation.lastMessage) === String(message._id)) {
       const latestMessage = await DirectMessage.findOne({
         conversation: conversation._id,
         deletedAt: null,
       }).sort({ _id: -1 });
 
       conversation.lastMessage = latestMessage?._id || null;
+
       conversation.lastMessageAt =
         latestMessage?.createdAt || conversation.createdAt;
 
@@ -472,7 +477,7 @@ export const markConversationRead = async (req, res, next) => {
   try {
     const conversation = await getAccessibleConversation(
       req.params.conversationId,
-      req.user._id
+      req.user._id,
     );
 
     if (!conversation) {
@@ -485,7 +490,7 @@ export const markConversationRead = async (req, res, next) => {
     const now = new Date();
 
     const readState = conversation.readStates.find(
-      (state) => String(state.user) === String(req.user._id)
+      (state) => String(state.user) === String(req.user._id),
     );
 
     if (readState) {
