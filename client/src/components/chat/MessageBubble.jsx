@@ -34,6 +34,7 @@ function MessageBubble({
   message,
   workspaceId,
   channelId,
+  conversationId,
   isOwn = false,
   onEdit,
   onDelete,
@@ -282,15 +283,21 @@ function MessageBubble({
   };
 
   const handleCopyLink = () => {
-    if (!workspaceId || !channelId || !message._id) return;
+    if (!message._id) return;
 
     const url = new URL(window.location.origin);
-
     url.pathname = "/";
-    url.searchParams.set("workspaceId", workspaceId);
-    url.searchParams.set("channelId", channelId);
-    url.hash = `message-${message._id}`;
 
+    if (conversationId) {
+      url.searchParams.set("conversationId", conversationId);
+    } else if (workspaceId && channelId) {
+      url.searchParams.set("workspaceId", workspaceId);
+      url.searchParams.set("channelId", channelId);
+    } else {
+      return;
+    }
+
+    url.hash = `message-${message._id}`;
     copyText(url.toString(), "link");
   };
   const date = message.createdAt ? new Date(message.createdAt) : null;
@@ -861,3 +868,4 @@ function areMessageBubblePropsEqual(previous, next) {
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);
+

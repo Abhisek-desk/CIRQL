@@ -130,14 +130,51 @@ export default function MainLayout() {
 
     const workspaceId = params.get("workspaceId");
     const channelId = params.get("channelId");
+    const conversationId = params.get("conversationId");
     const messageId = match?.[1];
 
-    return workspaceId && channelId && messageId
+    if (!messageId) return null;
+
+    if (conversationId) {
+      return { conversationId, messageId };
+    }
+
+    return workspaceId && channelId
       ? { workspaceId, channelId, messageId }
       : null;
   });
 
   const permalinkHandledRef = useRef("");
+
+  // OPEN THE CONVERSATION FROM A SHARED DM LINK
+  useEffect(() => {
+    if (!pendingPermalink?.conversationId || !conversations.length) return;
+
+    const target = conversations.find(
+      (item) =>
+        String(item._id) === String(pendingPermalink.conversationId),
+    );
+
+    if (!target) {
+      const key = `dm:${pendingPermalink.conversationId}`;
+      if (permalinkHandledRef.current === key) return;
+
+      permalinkHandledRef.current = key;
+      toast.error("The linked conversation could not be found.");
+      return;
+    }
+
+    if (
+      String(selectedConversation?._id) !==
+      String(pendingPermalink.conversationId)
+    ) {
+      setSelectedConversation(target);
+      setSelectedChannel(null);
+      setReplyToMessage(null);
+      setMessages([]);
+      setTypingUsers([]);
+    }
+  }, [pendingPermalink, conversations, selectedConversation?._id]);
 
   const selectedChannelRef = useRef(null);
   const selectedWorkspaceRef = useRef(null);
@@ -1173,6 +1210,21 @@ export default function MainLayout() {
       );
     };
 
+    const handleDirectMessageReactions = (payload) => {
+      if (!active) return;
+
+      if (String(payload?.conversationId) !== String(conversationId)) {
+        return;
+      }
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(payload.messageId)
+            ? { ...message, reactions: payload.reactions || [] }
+            : message,
+        ),
+      );
+    };
     const handleDirectTypingStart = (payload) => {
       if (!active) return;
 
@@ -1218,6 +1270,7 @@ export default function MainLayout() {
     socket.on("dm:message:new", handleNewDirectMessage);
     socket.on("dm:message:updated", handleDirectMessageUpdated);
     socket.on("dm:message:deleted", handleDirectMessageDeleted);
+    socket.on("dm:message:reactions", handleDirectMessageReactions);
     socket.on("dm:typing:start", handleDirectTypingStart);
     socket.on("dm:typing:stop", handleDirectTypingStop);
 
@@ -1328,6 +1381,7 @@ export default function MainLayout() {
       socket.off("dm:message:new", handleNewDirectMessage);
       socket.off("dm:message:updated", handleDirectMessageUpdated);
       socket.off("dm:message:deleted", handleDirectMessageDeleted);
+      socket.off("dm:message:reactions", handleDirectMessageReactions);
       socket.off("dm:typing:start", handleDirectTypingStart);
       socket.off("dm:typing:stop", handleDirectTypingStop);
 
@@ -1453,6 +1507,111 @@ export default function MainLayout() {
     loadingMessages,
     messages,
   ]);
+  // AUTOMATICALLY LOAD AND NAVIGATE TO A SHARED DM MESSAGE
+  useEffect(() => {
+    if (
+      !pendingPermalink?.conversationId ||
+      !selectedConversation?._id ||
+      String(selectedConversation._id) !== String(pendingPermalink.conversationId) ||
+      loadingMessages
+    ) {
+      return;
+    }
+
+    const permalinkKey = `dm:${pendingPermalink.conversationId}:${pendingPermalink.messageId}`;
+
+    if (permalinkHandledRef.current === permalinkKey) return;
+
+    let active = true;
+
+    const loadDirectPermalink = async () => {
+      try {
+        let currentMessages = [...messages];
+
+        let found = currentMessages.some(
+          (item) => String(item._id) === String(pendingPermalink.messageId),
+        );
+
+        let cursor = currentMessages[0]?._id;
+        let pageCount = 0;
+
+        while (!found && cursor && pageCount < 100) {
+          const page = await conversationService.getMessages(
+            selectedConversation._id,
+            cursor,
+            30,
+          );
+
+          if (!active) return;
+
+          const olderMessages = page.messages || [];
+          if (!olderMessages.length) break;
+
+          currentMessages = [...olderMessages, ...currentMessages];
+
+          found = currentMessages.some(
+            (item) => String(item._id) === String(pendingPermalink.messageId),
+          );
+
+          if (!page.hasMore || !page.nextCursor) break;
+
+          cursor = page.nextCursor;
+          pageCount += 1;
+        }
+
+        if (!active) return;
+
+        if (!found) {
+          permalinkHandledRef.current = permalinkKey;
+          toast.error("The shared direct message could not be found.");
+          return;
+        }
+
+        setMessages((previous) => {
+          const unique = new Map();
+
+          [...currentMessages, ...previous].forEach((item) => {
+            unique.set(String(item._id), item);
+          });
+
+          return Array.from(unique.values()).sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+          );
+        });
+
+        permalinkHandledRef.current = permalinkKey;
+        setHighlightMessageId(null);
+
+        requestAnimationFrame(() => {
+          if (active) {
+            setHighlightMessageId(String(pendingPermalink.messageId));
+          }
+        });
+
+        toast.success("Shared direct message opened");
+      } catch (error) {
+        if (!active) return;
+
+        console.error("DM permalink navigation error:", error);
+        toast.error(
+          error.response?.data?.message ||
+          "Could not open the shared direct message.",
+        );
+      }
+    };
+
+    loadDirectPermalink();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    pendingPermalink,
+    selectedConversation?._id,
+    loadingMessages,
+    messages,
+  ]);
+
   // CREATE WORKSPACE
   const handleCreateWorkspace = async (data) => {
     try {
@@ -1825,9 +1984,16 @@ export default function MainLayout() {
   // TOGGLE MESSAGE REACTION
   const handleReactMessage = useCallback(async (messageId, emoji) => {
     try {
-      const response = await messageService.toggleReaction(messageId, emoji);
+      const targetMessage = messages.find(
+        (message) => String(message._id) === String(messageId),
+      );
 
-      // Update the current user's UI immediately.
+      const isDirectMessage = Boolean(targetMessage?.conversation);
+
+      const response = isDirectMessage
+        ? await conversationService.toggleReaction(messageId, emoji)
+        : await messageService.toggleReaction(messageId, emoji);
+
       setMessages((previous) =>
         previous.map((message) =>
           String(message._id) === String(messageId)
@@ -1838,7 +2004,7 @@ export default function MainLayout() {
     } catch (error) {
       toast.error(error.response?.data?.message || "Could not update reaction");
     }
-  }, []);
+  }, [messages]);
 
   // START A DIRECT CONVERSATION FROM A WORKSPACE MEMBER
   const handleSelectMember = async (member) => {
@@ -2332,6 +2498,8 @@ export default function MainLayout() {
               <DirectMessages
                 messages={messages}
                 currentUserId={currentUserId}
+                conversationId={selectedConversation._id}
+                highlightMessageId={highlightMessageId}
                 typingUsers={typingUsers}
                 onEditMessage={handleEditDirectMessage}
                 onDeleteMessage={handleDeleteDirectMessage}
@@ -2483,5 +2651,8 @@ export default function MainLayout() {
     </div>
   );
 }
+
+
+
 
 

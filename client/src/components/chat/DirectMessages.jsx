@@ -10,8 +10,21 @@ export default function DirectMessages({
   onEditMessage,
   onDeleteMessage,
   onReplyMessage,
+  onReactMessage,
+  conversationId,
+  highlightMessageId,
 }) {
   const bottomRef = useRef(null);
+
+  useEffect(() => {
+    if (!highlightMessageId) return;
+
+    const target = document.getElementById(
+      `message-${highlightMessageId}`,
+    );
+
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightMessageId, messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -48,18 +61,22 @@ export default function DirectMessages({
               return (
                 <motion.div
                   key={message._id}
+                  id={`message-${message._id}`}
                   layout
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.18 }}
+                  className={String(highlightMessageId) === String(message._id) ? "rounded-xl ring-2 ring-indigo-500 ring-offset-2 ring-offset-[var(--bg)]" : ""}
                 >
                   <MessageBubble
                     message={message}
+                    conversationId={conversationId}
                     isOwn={String(senderId) === String(currentUserId)}
                     currentUserId={currentUserId}
                     onEdit={onEditMessage}
                     onDelete={onDeleteMessage}
                     onReply={onReplyMessage}
+                    onReact={onReactMessage}
                     members={[]}
                   />
                 </motion.div>
