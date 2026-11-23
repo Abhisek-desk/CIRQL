@@ -8,6 +8,7 @@
   Users,
   Wifi,
   WifiOff,
+  MessageCircle,
 } from "lucide-react";
 
 import ThemeToggle from "../common/ThemeToggle";
@@ -16,6 +17,9 @@ import NotificationBell from "../common/NotificationBell";
 export default function ChatHeader({
   onMenuClick,
   channel,
+  conversation,
+  currentUserId,
+  onlineUsers = [],
   socketConnected = false,
   onlineCount = 0,
   onSearchClick,
@@ -26,18 +30,39 @@ export default function ChatHeader({
   onMarkAllNotificationsRead,
   onNotificationClick,
 }) {
+  const recipient = conversation?.participants?.find(
+    (participant) =>
+      String(participant._id || participant) !== String(currentUserId),
+  );
+
+  const recipientName =
+    typeof recipient === "object"
+      ? recipient?.name || "Unknown user"
+      : "Direct message";
+
+  const recipientId =
+    typeof recipient === "object" ? recipient?._id : recipient;
+
+  const recipientOnline = onlineUsers.some(
+    (id) => String(id) === String(recipientId),
+  );
+
+  const isDirectMessage = Boolean(conversation);
+
   return (
     <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--bg)] px-4 md:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           onClick={onMenuClick}
           className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface)] lg:hidden"
-          aria-label="Open channels"
+          aria-label="Open sidebar"
         >
           <Menu size={21} />
         </button>
 
-        {channel?.type === "private" ? (
+        {isDirectMessage ? (
+          <MessageCircle size={20} className="shrink-0 text-indigo-500" />
+        ) : channel?.type === "private" ? (
           <Lock size={19} className="shrink-0 text-[var(--muted)]" />
         ) : (
           <Hash size={20} className="shrink-0 text-[var(--muted)]" />
@@ -45,19 +70,37 @@ export default function ChatHeader({
 
         <div className="min-w-0">
           <h2 className="truncate font-semibold text-[var(--text)]">
-            {channel?.name || "Welcome to CIRQL"}
+            {isDirectMessage
+              ? recipientName
+              : channel?.name || "Welcome to CIRQL"}
           </h2>
 
           <div className="mt-1 flex items-center gap-2">
-            <p className="hidden truncate text-xs text-[var(--muted)] sm:block">
-              {channel?.description || "Select a channel to start collaborating"}
-            </p>
+            {isDirectMessage ? (
+              <p className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    recipientOnline ? "bg-emerald-500" : "bg-zinc-400"
+                  }`}
+                />
+                {recipientOnline ? "Online" : "Offline"}
+              </p>
+            ) : (
+              <p className="hidden truncate text-xs text-[var(--muted)] sm:block">
+                {channel?.description ||
+                  "Select a channel to start collaborating"}
+              </p>
+            )}
 
             <span
               className={`flex shrink-0 items-center gap-1 text-[10px] ${
                 socketConnected ? "text-emerald-500" : "text-amber-500"
               }`}
-              title={socketConnected ? "Connected to chat server" : "Reconnecting"}
+              title={
+                socketConnected
+                  ? "Connected to chat server"
+                  : "Reconnecting"
+              }
             >
               {socketConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
               <span className="hidden sm:inline">

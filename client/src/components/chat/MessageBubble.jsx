@@ -861,7 +861,3 @@ function areMessageBubblePropsEqual(previous, next) {
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);
-
-
-
-
