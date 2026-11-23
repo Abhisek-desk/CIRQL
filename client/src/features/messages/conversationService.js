@@ -46,6 +46,15 @@ const conversationService = {
 
     return response.data;
   },
+
+  toggleReaction: async (messageId, emoji) => {
+    const response = await api.post(
+      `/conversations/messages/${messageId}/reactions`,
+      { emoji },
+    );
+
+    return response.data;
+  },
 };
 
 export default conversationService;

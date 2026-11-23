@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 
 import authMiddleware from "../middleware/authMiddleware.js";
 
@@ -11,6 +11,7 @@ import {
   editDirectMessage,
   deleteDirectMessage,
   markConversationRead,
+  toggleDirectMessageReaction,
 } from "../controllers/conversationController.js";
 
 const router = express.Router();
@@ -26,6 +27,7 @@ router.get("/:conversationId/messages", getDirectMessages);
 router.post("/:conversationId/messages", sendDirectMessage);
 
 router.post("/:conversationId/read", markConversationRead);
+router.post("/messages/:messageId/reactions", toggleDirectMessageReaction);
 
 // Individual conversation
 router.get("/:conversationId", getConversation);

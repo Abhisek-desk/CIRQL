@@ -1,7 +1,8 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 import Conversation from "../models/Conversation.js";
 import DirectMessage from "../models/DirectMessage.js";
 import { createNotification } from "../services/notificationService.js";
+import { getIO } from "../sockets/socket.js";
 
 import {
   createOrGetConversation,
@@ -513,3 +514,98 @@ export const markConversationRead = async (req, res, next) => {
     next(error);
   }
 };
+
+// TOGGLE DIRECT MESSAGE REACTION
+export const toggleDirectMessageReaction = async (req, res, next) => {
+  try {
+    const { messageId } = req.params;
+    const { emoji } = req.body;
+
+    const ALLOWED_EMOJIS = [
+      "\u{1F44D}",
+      "\u2764\uFE0F",
+      "\u{1F602}",
+      "\u{1F389}",
+      "\u{1F440}",
+      "\u{1F680}",
+    ];
+
+    if (!mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid message ID",
+      });
+    }
+
+    if (!ALLOWED_EMOJIS.includes(emoji)) {
+      return res.status(400).json({
+        success: false,
+        message: "Unsupported emoji",
+      });
+    }
+
+    const message = await DirectMessage.findById(messageId);
+
+    if (!message || message.deletedAt) {
+      return res.status(404).json({
+        success: false,
+        message: "Direct message not found",
+      });
+    }
+
+    const conversation = await getAccessibleConversation(
+      message.conversation,
+      req.user._id,
+    );
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found or access denied",
+      });
+    }
+
+    const existingIndex = message.reactions.findIndex(
+      (reaction) =>
+        String(reaction.user) === String(req.user._id) &&
+        reaction.emoji === emoji,
+    );
+
+    const action = existingIndex !== -1 ? "removed" : "added";
+
+    if (existingIndex !== -1) {
+      message.reactions.splice(existingIndex, 1);
+    } else {
+      message.reactions.push({
+        user: req.user._id,
+        emoji,
+      });
+    }
+
+    await message.save();
+
+    const reactions = message.reactions.map((reaction) => ({
+      user: String(reaction.user),
+      emoji: reaction.emoji,
+    }));
+
+    const payload = {
+      messageId: String(message._id),
+      conversationId: String(message.conversation),
+      reactions,
+    };
+
+    getIO()
+      .to(`conversation:${message.conversation}`)
+      .emit("dm:message:reactions", payload);
+
+    return res.status(200).json({
+      success: true,
+      message: `Reaction ${action} successfully`,
+      reactions,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
