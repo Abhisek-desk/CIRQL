@@ -12,6 +12,8 @@ import {
 } from "../services/presenceService.js";
 
 import Message from "../models/Message.js";
+import DirectMessage from "../models/DirectMessage.js";
+import Conversation from "../models/Conversation.js";
 
 let io;
 
@@ -70,6 +72,265 @@ export const initializeSocketServer = (httpServer) => {
       onlineUsers: getOnlineUsers(),
     });
 
+    // ================= DIRECT MESSAGES =================
+
+    // JOIN DIRECT CONVERSATION
+    socket.on("dm:join", async (conversationId, callback) => {
+      try {
+        const conversation = await Conversation.findOne({
+          _id: conversationId,
+          participants: socket.user._id,
+        });
+
+        if (!conversation) {
+          return callback?.({
+            success: false,
+            message: "Conversation access denied",
+          });
+        }
+
+        socket.join(`conversation:${conversationId}`);
+
+        callback?.({
+          success: true,
+          message: "Joined direct conversation",
+        });
+      } catch (error) {
+        callback?.({
+          success: false,
+          message: "Unable to join conversation",
+        });
+      }
+    });
+
+    // LEAVE DIRECT CONVERSATION
+    socket.on("dm:leave", (conversationId) => {
+      socket.leave(`conversation:${conversationId}`);
+    });
+
+    // SEND DIRECT MESSAGE
+    socket.on("dm:send", async (payload, callback) => {
+      try {
+        const {
+          conversationId,
+          content = "",
+          replyTo = null,
+          attachments = [],
+        } = payload || {};
+
+        if (!conversationId) {
+          return callback?.({
+            success: false,
+            message: "Conversation ID is required",
+          });
+        }
+
+        const conversation = await Conversation.findOne({
+          _id: conversationId,
+          participants: socket.user._id,
+        });
+
+        if (!conversation) {
+          return callback?.({
+            success: false,
+            message: "Conversation access denied",
+          });
+        }
+
+        if (
+          typeof content !== "string" ||
+          content.length > 5000 ||
+          !Array.isArray(attachments) ||
+          attachments.length > 5
+        ) {
+          return callback?.({
+            success: false,
+            message: "Invalid message content or attachments",
+          });
+        }
+
+        if (!content.trim() && attachments.length === 0) {
+          return callback?.({
+            success: false,
+            message: "Message cannot be empty",
+          });
+        }
+
+        if (replyTo) {
+          const originalMessage = await DirectMessage.findOne({
+            _id: replyTo,
+            conversation: conversationId,
+            deletedAt: null,
+          });
+
+          if (!originalMessage) {
+            return callback?.({
+              success: false,
+              message: "Reply message not found",
+            });
+          }
+        }
+
+        const message = await DirectMessage.create({
+          conversation: conversationId,
+          sender: socket.user._id,
+          content: content.trim(),
+          replyTo,
+          attachments,
+        });
+
+        conversation.lastMessage = message._id;
+        conversation.lastMessageAt = message.createdAt;
+
+        const readState = conversation.readStates.find(
+          (state) => String(state.user) === String(socket.user._id)
+        );
+
+        if (readState) {
+          readState.lastReadAt = new Date();
+        } else {
+          conversation.readStates.push({
+            user: socket.user._id,
+            lastReadAt: new Date(),
+          });
+        }
+
+        await conversation.save();
+
+        await message.populate("sender", "name email avatar");
+
+        await message.populate({
+          path: "replyTo",
+          select: "content sender createdAt",
+          populate: {
+            path: "sender",
+            select: "name avatar",
+          },
+        });
+
+        const recipientId = conversation.participants.find(
+          (participant) =>
+            String(participant) !== String(socket.user._id)
+        );
+
+        // Send to conversation members and their other connected devices.
+        // The sender's current socket is excluded; its acknowledgement
+        // supplies the newly created message.
+        socket.to(`conversation:${conversationId}`)
+          .to(`user:${recipientId}`)
+          .emit("dm:message:new", message);
+
+        callback?.({
+          success: true,
+          message,
+        });
+      } catch (error) {
+        callback?.({
+          success: false,
+          message: error.message || "Could not send direct message",
+        });
+      }
+    });
+
+    // DIRECT MESSAGE TYPING START
+    socket.on("dm:typing:start", async (conversationId) => {
+      try {
+        const conversation = await Conversation.findOne({
+          _id: conversationId,
+          participants: socket.user._id,
+        });
+
+        if (!conversation) return;
+
+        socket.to(`conversation:${conversationId}`).emit(
+          "dm:typing:start",
+          {
+            conversationId,
+            userId,
+            name: socket.user.name,
+          }
+        );
+      } catch (error) {
+        console.error("DM typing start error:", error.message);
+      }
+    });
+
+    // DIRECT MESSAGE TYPING STOP
+    socket.on("dm:typing:stop", async (conversationId) => {
+      try {
+        const conversation = await Conversation.findOne({
+          _id: conversationId,
+          participants: socket.user._id,
+        });
+
+        if (!conversation) return;
+
+        socket.to(`conversation:${conversationId}`).emit(
+          "dm:typing:stop",
+          {
+            conversationId,
+            userId,
+          }
+        );
+      } catch (error) {
+        console.error("DM typing stop error:", error.message);
+      }
+    });
+
+    // DIRECT MESSAGE UPDATED
+    socket.on("dm:message:updated", async (messageId) => {
+      try {
+        const message = await DirectMessage.findById(messageId);
+
+        if (!message || message.deletedAt) return;
+
+        const conversation = await Conversation.findOne({
+          _id: message.conversation,
+          participants: socket.user._id,
+        });
+
+        if (!conversation) return;
+
+        await message.populate("sender", "name email avatar");
+
+        io.to(`conversation:${message.conversation}`).emit(
+          "dm:message:updated",
+          message
+        );
+      } catch (error) {
+        console.error("DM update broadcast error:", error.message);
+      }
+    });
+
+    // DIRECT MESSAGE DELETED
+    socket.on("dm:message:deleted", async (messageId) => {
+      try {
+        const message = await DirectMessage.findById(messageId);
+
+        if (!message || !message.deletedAt) return;
+
+        const conversation = await Conversation.findOne({
+          _id: message.conversation,
+          participants: socket.user._id,
+        });
+
+        if (!conversation) return;
+
+        io.to(`conversation:${message.conversation}`).emit(
+          "dm:message:deleted",
+          {
+            _id: message._id,
+            conversation: message.conversation,
+            content: message.content,
+            deletedAt: message.deletedAt,
+          }
+        );
+      } catch (error) {
+        console.error("DM delete broadcast error:", error.message);
+      }
+    });
+
+    // ================= END DIRECT MESSAGES =================
     // JOIN CHANNEL
     socket.on("channel:join", async (channelId, callback) => {
       try {
@@ -246,4 +507,5 @@ export const getIO = () => {
 
   return io;
 };
+
 
