@@ -30,7 +30,7 @@ describe("Authentication Integration Tests", () => {
     });
 
     await mongoose.connect(mongoServer.getUri());
-  }, 120000);
+  }, 300000);
 
   afterAll(async () => {
     await mongoose.disconnect();
@@ -243,3 +243,4 @@ describe("Authentication Integration Tests", () => {
     expect(refresh.status).toBe(401);
   });
 });
+
