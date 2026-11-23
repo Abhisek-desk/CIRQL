@@ -304,6 +304,11 @@ Latest local verification:
 - Frontend HTTP response: **200**
 - Production deployment: **Not yet verified**
 
-## License
+  
+👨‍💻 Author
 
-This project is intended for educational and portfolio purposes.
+    ABHISEK MISHRA🤗
+
+- LinkedIn: https://www.linkedin.com/in/abhisek-mishra-31
+
+- GitHub: https://github.com/Abhisek-desk
