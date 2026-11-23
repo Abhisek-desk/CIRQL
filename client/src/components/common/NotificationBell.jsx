@@ -2,7 +2,6 @@
 import { AnimatePresence, m as motion } from "motion/react";
 import {
   Bell,
-  Check,
   CheckCheck,
   MessageCircle,
   Reply,
@@ -22,7 +21,6 @@ const formatTime = (date) => {
   const value = new Date(date);
   const now = new Date();
   const diff = Math.max(0, now - value);
-
   const minutes = Math.floor(diff / 60000);
 
   if (minutes < 1) return "Just now";
@@ -35,6 +33,35 @@ const formatTime = (date) => {
   if (days < 7) return `${days}d ago`;
 
   return value.toLocaleDateString();
+};
+
+const formatPreview = (content = "") => {
+  return String(content)
+    .replace(/```[^\n]*\n?/g, "")
+    .replace(/```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(.*?)\1/g, "$2")
+    .replace(/~~(.*?)~~/g, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const getDescription = (notification) => {
+  switch (notification.type) {
+    case "reply":
+      return "replied in";
+    case "mention":
+      return "mentioned you in";
+    case "workspace_invitation":
+      return "invited you to join a workspace";
+    case "new_message":
+    default:
+      return "sent a message in";
+  }
 };
 
 export default function NotificationBell({
@@ -76,7 +103,7 @@ export default function NotificationBell({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        aria-label="Notifications"
+        aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
         aria-expanded={open}
         className="relative rounded-lg p-2 text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--text)]"
       >
@@ -111,8 +138,10 @@ export default function NotificationBell({
               <div className="flex items-center gap-1">
                 {unreadCount > 0 && (
                   <button
+                    type="button"
                     onClick={onMarkAllRead}
                     title="Mark all as read"
+                    aria-label="Mark all notifications as read"
                     className="rounded-lg p-2 text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-indigo-500"
                   >
                     <CheckCheck size={17} />
@@ -120,6 +149,7 @@ export default function NotificationBell({
                 )}
 
                 <button
+                  type="button"
                   onClick={() => setOpen(false)}
                   aria-label="Close notifications"
                   className="rounded-lg p-2 text-[var(--muted)] transition hover:bg-[var(--surface)]"
@@ -158,89 +188,94 @@ export default function NotificationBell({
                 <div className="divide-y divide-[var(--border)]">
                   {notifications.map((notification) => {
                     const Icon = iconMap[notification.type] || Bell;
+                    const channelName =
+                      notification.channel?.name ||
+                      (notification.channel ? "channel" : null);
+
+                    const preview = formatPreview(notification.content || "");
 
                     return (
-                      <button
-                        type="button"
+                      <div
                         key={notification._id}
-                        onClick={() => {
-                          onNotificationClick(notification);
-                          setOpen(false);
-                        }}
-                        className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-[var(--surface)] ${
+                        className={`flex w-full gap-3 px-4 py-3 transition hover:bg-[var(--surface)] ${
                           !notification.isRead ? "bg-indigo-500/[0.045]" : ""
                         }`}
                       >
-                        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-500/10 text-indigo-500">
-                          {notification.sender?.avatar ? (
-                            <img
-                              src={notification.sender.avatar}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <Icon size={18} />
-                          )}
-                          {!notification.isRead && (
-                            <span className="absolute right-0 top-0 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg)] bg-indigo-500" />
-                          )}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onNotificationClick?.(notification);
+                            setOpen(false);
+                          }}
+                          aria-label={`Open notification from ${notification.sender?.name || "CIRQL"}`}
+                          className="flex min-w-0 flex-1 gap-3 text-left"
+                        >
+                          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-500/10 text-indigo-500">
+                            {notification.sender?.avatar ? (
+                              <img
+                                src={notification.sender.avatar}
+                                alt=""
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <Icon size={18} />
+                            )}
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="truncate text-xs font-semibold text-[var(--text)]">
-                              {notification.sender?.name || "CIRQL"}
-                            </p>
-                            <span className="shrink-0 text-[10px] text-[var(--muted)]">
-                              {formatTime(notification.createdAt)}
-                            </span>
+                            {!notification.isRead && (
+                              <span className="absolute right-0 top-0 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg)] bg-indigo-500" />
+                            )}
                           </div>
 
-                          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--muted)]">
-                            {notification.type === "reply"
-                              ? "replied in"
-                              : "sent a message in"}{" "}
-                            <span className="font-semibold text-[var(--text)]">
-                              #{notification.channel?.name || "channel"}
-                            </span>
-                          </p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="truncate text-xs font-semibold text-[var(--text)]">
+                                {notification.sender?.name || "CIRQL"}
+                              </p>
+                              <span className="shrink-0 text-[10px] text-[var(--muted)]">
+                                {formatTime(notification.createdAt)}
+                              </span>
+                            </div>
 
-                          {notification.content && (
-                            <p className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">
-                              {notification.content}
+                            <p className="mt-1 text-xs leading-relaxed text-[var(--muted)]">
+                              {getDescription(notification)}
+
+                              {channelName && (
+                                <>
+                                  {" "}
+                                  <span className="font-semibold text-[var(--text)]">
+                                    #{channelName}
+                                  </span>
+                                </>
+                              )}
                             </p>
-                          )}
 
-                          {!notification.isRead && (
-                            <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium text-indigo-500">
-                              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                              Unread
-                            </span>
-                          )}
-                        </div>
+                            {preview && (
+                              <p className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-[var(--muted)]">
+                                {preview}
+                              </p>
+                            )}
+
+                            {!notification.isRead && (
+                              <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium text-indigo-500">
+                                <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                Unread
+                              </span>
+                            )}
+                          </div>
+                        </button>
 
                         {!notification.isRead && (
-                          <span
-                            role="button"
-                            tabIndex={0}
+                          <button
+                            type="button"
                             aria-label="Mark as read"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onMarkRead(notification._id);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                onMarkRead(notification._id);
-                              }
-                            }}
-                            className="self-center rounded-md p-1.5 text-[var(--muted)] hover:bg-indigo-500/10 hover:text-indigo-500"
+                            title="Mark as read"
+                            onClick={() => onMarkRead?.(notification._id)}
+                            className="self-center rounded-md p-1.5 text-[var(--muted)] transition hover:bg-indigo-500/10 hover:text-indigo-500"
                           >
-                            <Check size={15} />
-                          </span>
+                            <CheckCheck size={15} />
+                          </button>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -258,5 +293,3 @@ export default function NotificationBell({
     </div>
   );
 }
-
-

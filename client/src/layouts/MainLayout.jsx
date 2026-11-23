@@ -7,6 +7,7 @@ import WorkspaceSidebar from "../components/common/WorkspaceSidebar";
 import ChannelSidebar from "../components/channels/ChannelSidebar";
 import ChatHeader from "../components/chat/ChatHeader";
 import ChatMessages from "../components/chat/ChatMessages";
+import DirectMessages from "../components/chat/DirectMessages";
 import MessageLoading from "../components/loaders/MessageLoading";
 import MessageSearch from "../components/chat/MessageSearch";
 import MessageComposer from "../components/chat/MessageComposer";
@@ -66,6 +67,7 @@ export default function MainLayout() {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const [notifications, setNotifications] = useState([]);
+  const seenNotificationIdsRef = useRef(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(true);
   const [channelUnreadCounts, setChannelUnreadCounts] = useState({});
@@ -276,18 +278,23 @@ export default function MainLayout() {
     const handleNewNotification = (notification) => {
       if (!notification?._id) return;
 
-      setNotifications((previous) => {
-        if (
-          previous.some((item) => String(item._id) === String(notification._id))
-        ) {
-          return previous;
-        }
+      const notificationId = String(notification._id);
 
-        return [notification, ...previous].slice(0, 50);
-      });
+      // Ignore an event already received or loaded from notification history.
+      if (seenNotificationIdsRef.current.has(notificationId)) return;
+
+      seenNotificationIdsRef.current.add(notificationId);
+
+      setNotifications((previous) => [
+        notification,
+        ...previous.filter(
+          (item) => String(item._id) !== notificationId,
+        ),
+      ].slice(0, 50));
 
       if (!notification.isRead) {
         setUnreadCount((previous) => previous + 1);
+
         toast("New notification", {
           icon: "\uD83D\uDD14",
         });
@@ -297,7 +304,8 @@ export default function MainLayout() {
           notificationChannel?._id || notificationChannel;
 
         const notificationWorkspaceId =
-          notificationChannel?.workspace?._id || notificationChannel?.workspace;
+          notificationChannel?.workspace?._id ||
+          notificationChannel?.workspace;
 
         const activeWorkspaceId = selectedWorkspaceRef.current?._id;
         const activeChannelId = selectedChannelRef.current?._id;
@@ -309,7 +317,8 @@ export default function MainLayout() {
         ) {
           setChannelUnreadCounts((previous) => ({
             ...previous,
-            [notificationChannelId]: (previous[notificationChannelId] || 0) + 1,
+            [notificationChannelId]:
+              (previous[notificationChannelId] || 0) + 1,
           }));
         }
       }
@@ -381,7 +390,11 @@ export default function MainLayout() {
 
         if (!active) return;
 
-        setNotifications(data.notifications || []);
+        seenNotificationIdsRef.current = new Set([
+            ...seenNotificationIdsRef.current,
+            ...(data.notifications || []).map((item) => String(item._id)),
+          ]);
+          setNotifications(data.notifications || []);
         setUnreadCount(data.unreadCount || 0);
       } catch (error) {
         if (active) {
@@ -1520,12 +1533,8 @@ export default function MainLayout() {
   };
 
   // SEND DIRECT MESSAGE
-  const handleSendDirectMessage = async (
-    content,
-    replyTo = null,
-    mentionIds = [],
-    files = [],
-  ) => {
+  const handleSendDirectMessage = async (...args) => {
+    const [content, replyTo = null, , files = []] = args;
     const conversationId = selectedConversation?._id;
 
     if (!conversationId) {
@@ -1698,6 +1707,70 @@ export default function MainLayout() {
     }
   }, [token]);
 
+  // EDIT DIRECT MESSAGE
+  const handleEditDirectMessage = useCallback(async (messageId, content) => {
+    try {
+      const updatedMessage = await conversationService.editMessage(
+        messageId,
+        content,
+      );
+
+      setMessages((previous) =>
+        applyMessageUpdate(previous, {
+          ...updatedMessage,
+          _id: updatedMessage._id || messageId,
+        }),
+      );
+
+      const socket = connectSocket(token);
+
+      if (socket?.connected) {
+        socket.emit("dm:message:updated", messageId);
+      }
+
+      toast.success("Message updated");
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "Could not edit direct message",
+      );
+      throw error;
+    }
+  }, [token]);
+
+  // DELETE DIRECT MESSAGE
+  const handleDeleteDirectMessage = useCallback(async (messageId) => {
+    try {
+      await conversationService.deleteMessage(messageId);
+
+      const deletedAt = new Date().toISOString();
+
+      const deletedMessage = {
+        _id: messageId,
+        content: "This message was deleted",
+        deletedAt,
+      };
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          String(message._id) === String(messageId)
+            ? { ...message, ...deletedMessage }
+            : message,
+        ),
+      );
+
+      const socket = connectSocket(token);
+
+      if (socket?.connected) {
+        socket.emit("dm:message:deleted", messageId);
+      }
+
+      toast.success("Message deleted");
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message || "Could not delete direct message",
+      );
+    }
+  }, [token]);
   // TOGGLE MESSAGE REACTION
   const handleReactMessage = useCallback(async (messageId, emoji) => {
     try {
@@ -2085,6 +2158,9 @@ export default function MainLayout() {
         <ChatHeader
           onMenuClick={() => setMobileMenuOpen(true)}
           channel={selectedChannel}
+          conversation={selectedConversation}
+          currentUserId={currentUserId}
+          onlineUsers={onlineUsers}
           socketConnected={socketConnected}
           onlineCount={onlineCount}
           onSearchClick={() => setSearchOpen(true)}
@@ -2121,6 +2197,75 @@ export default function MainLayout() {
           <div className="flex flex-1 items-center justify-center">
             <div className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-500/20 border-t-indigo-500" />
           </div>
+        ) : selectedConversation ? (
+          <>
+            {loadingMessages ? (
+              <div className="flex-1 overflow-y-auto">
+                <MessageLoading />
+              </div>
+            ) : messageLoadError ? (
+              <div className="flex flex-1 items-center justify-center px-6 py-10">
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-7 text-center shadow-xl"
+                >
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-2xl text-red-500">
+                    !
+                  </div>
+
+                  <h3 className="mt-5 text-lg font-bold text-[var(--text)]">
+                    Couldn't load direct messages
+                  </h3>
+
+                  <p role="alert" className="mt-2 text-sm text-[var(--muted)]">
+                    {messageLoadError}
+                  </p>
+
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => {
+                      setMessageLoadError("");
+                      setLoadingMessages(true);
+                      setRetryHistory((previous) => previous + 1);
+                    }}
+                    className="mt-6 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                  >
+                    Retry loading messages
+                  </motion.button>
+                </motion.div>
+              </div>
+            ) : (
+              <DirectMessages
+                messages={messages}
+                currentUserId={currentUserId}
+                typingUsers={typingUsers}
+                onEditMessage={handleEditDirectMessage}
+                onDeleteMessage={handleDeleteDirectMessage}
+                onReplyMessage={setReplyToMessage}
+              />
+            )}
+
+            <MessageComposer
+              key={selectedConversation._id}
+              channelName={
+                selectedConversation.participants?.find(
+                  (participant) =>
+                    String(participant._id || participant) !==
+                    String(currentUserId),
+                )?.name || "Direct message"
+              }
+              members={[]}
+              onSend={handleSendDirectMessage}
+              uploading={uploadingAttachments}
+              uploadProgress={uploadProgress}
+              onTypingChange={handleDirectTypingChange}
+              replyTo={replyToMessage}
+              onCancelReply={() => setReplyToMessage(null)}
+            />
+          </>
         ) : !selectedWorkspace ? (
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
             <h2 className="text-2xl font-bold">Your team starts here</h2>
@@ -2247,6 +2392,8 @@ export default function MainLayout() {
     </div>
   );
 }
+
+
 
 
 

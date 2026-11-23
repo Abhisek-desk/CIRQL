@@ -11,6 +11,10 @@ const workspaceService = {
     return response.data.workspace;
   },
 
+  getWorkspaceMembers: async (workspaceId) => {
+    const response = await api.get(`/workspaces/${workspaceId}/members`);
+    return response.data.members;
+  },
   getChannels: async (workspaceId) => {
     const response = await api.get(`/channels/${workspaceId}`);
     return response.data.channels;
@@ -23,3 +27,4 @@ const workspaceService = {
 };
 
 export default workspaceService;
+
