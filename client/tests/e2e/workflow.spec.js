@@ -140,7 +140,7 @@ test.describe("CIRQL complete user workflow", () => {
     await page.getByRole("button", { name: "Send message" }).click();
 
     // 8. VERIFY MESSAGE
-    await expect(page.getByText(messageText, { exact: true })).toBeVisible({
+    await expect(page.getByText(messageText, { exact: true }).first()).toBeVisible({
       timeout: 20000,
     });
 
