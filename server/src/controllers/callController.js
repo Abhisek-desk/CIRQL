@@ -56,10 +56,6 @@ export const getIceServers = async (req, res, next) => {
     const meteredAppUrl = process.env.METERED_APP_URL?.replace(/\/+$/, "");
     const meteredApiKey = process.env.METERED_API_KEY;
 
-    console.info("[TURN CONFIG CHECK]", {
-      appUrlConfigured: Boolean(meteredAppUrl),
-      apiKeyConfigured: Boolean(meteredApiKey),
-    });
 
     if (meteredAppUrl && meteredApiKey) {
       const endpoint = new URL(
@@ -108,10 +104,7 @@ export const getIceServers = async (req, res, next) => {
       return res.json({
         success: true,
         turnConfigured: false,
-        debugConfig: {
-          appUrlConfigured: Boolean(meteredAppUrl),
-          apiKeyConfigured: Boolean(meteredApiKey),
-        },
+
         iceServers,
       });
     }
