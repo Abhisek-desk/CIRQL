@@ -56,6 +56,8 @@ export const uploadFile = async (req, res, next) => {
         size: result.bytes,
         resourceType: result.resource_type,
         mimeType: req.file.mimetype,
+        width: isImage ? result.width || null : null,
+        height: isImage ? result.height || null : null,
       },
     });
   } catch (error) {

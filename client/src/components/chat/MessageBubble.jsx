@@ -28,6 +28,14 @@ const formatFileSize = (bytes = 0) => {
 const isImageAttachment = (file) =>
   file.mimeType?.startsWith("image/") ||
   file.resourceType === "image";
+const getOptimizedImageUrl = (url, width) => {
+  if (!url || !url.includes("/image/upload/")) return url;
+
+  return url.replace(
+    "/image/upload/",
+    `/image/upload/f_auto,q_auto,w_${width}/`,
+  );
+};
 
 
 function MessageBubble({
@@ -405,13 +413,28 @@ function MessageBubble({
                 className="block overflow-hidden rounded-xl border border-[var(--border)]"
                 title={`Open ${file.name}`}
               >
-                <img
-                  src={file.url}
-                  width={640} height={360}
-                  alt={file.name}
-                  loading="eager"
-                  className="max-h-72 w-full object-cover transition duration-300 hover:scale-[1.02]"
-                />
+                <div
+                  className="w-full overflow-hidden"
+                  style={{
+                    aspectRatio:
+                      file.width > 0 && file.height > 0
+                        ? `${file.width} / ${file.height}`
+                        : "4 / 3",
+                    maxHeight: "18rem",
+                  }}
+                >
+                  <img
+                    src={getOptimizedImageUrl(file.url, 768)}
+                    srcSet={`${getOptimizedImageUrl(file.url, 384)} 384w, ${getOptimizedImageUrl(file.url, 768)} 768w, ${getOptimizedImageUrl(file.url, 1200)} 1200w`}
+                    sizes="(max-width: 640px) 85vw, 560px"
+                    {...(file.width > 0 && file.height > 0
+                      ? { width: file.width, height: file.height }
+                      : {})}
+                    alt={file.name}
+                    loading="eager"
+                    className="h-full w-full object-contain transition duration-300 hover:scale-[1.02]"
+                  />
+                </div>
               </a>
             ) : (
               <div className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 ${
@@ -871,4 +894,3 @@ function areMessageBubblePropsEqual(previous, next) {
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);
-

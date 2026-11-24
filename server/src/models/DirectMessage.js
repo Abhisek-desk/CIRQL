@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 
 const attachmentSchema = new mongoose.Schema(
   {
@@ -31,6 +31,16 @@ const attachmentSchema = new mongoose.Schema(
     mimeType: {
       type: String,
       default: "",
+    },
+    width: {
+      type: Number,
+      default: null,
+      min: 1,
+    },
+    height: {
+      type: Number,
+      default: null,
+      min: 1,
     },
   },
   { _id: true }

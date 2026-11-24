@@ -32,6 +32,16 @@ const attachmentSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    width: {
+      type: Number,
+      default: null,
+      min: 1,
+    },
+    height: {
+      type: Number,
+      default: null,
+      min: 1,
+    },
   },
   { _id: true }
 );
