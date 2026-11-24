@@ -9,6 +9,7 @@
   Wifi,
   WifiOff,
   MessageCircle,
+  History,
 } from "lucide-react";
 
 import ThemeToggle from "../common/ThemeToggle";
@@ -16,6 +17,9 @@ import NotificationBell from "../common/NotificationBell";
 
 export default function ChatHeader({
   onMenuClick,
+  onVoiceCall,
+  onVideoCall,
+  onCallHistory,
   channel,
   conversation,
   currentUserId,
@@ -129,8 +133,22 @@ export default function ChatHeader({
         >
           <Search size={19} />
         </button>
+        <button
+          type="button"
+          onClick={onCallHistory}
+          disabled={!conversation}
+          title="Call history"
+          aria-label="Call history"
+          className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <History size={19} />
+        </button>
 
         <button
+          type="button"
+          onClick={onVoiceCall}
+          disabled={!conversation}
+          title="Start voice call"
           aria-label="Voice call"
           className="hidden rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface)] md:block"
         >
@@ -138,6 +156,10 @@ export default function ChatHeader({
         </button>
 
         <button
+          type="button"
+          onClick={onVideoCall}
+          disabled={!conversation}
+          title="Start video call"
           aria-label="Video call"
           className="hidden rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--surface)] md:block"
         >
@@ -165,3 +187,5 @@ export default function ChatHeader({
     </header>
   );
 }
+
+

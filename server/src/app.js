@@ -23,6 +23,7 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import readStateRoutes from "./routes/readStateRoutes.js";
 import presenceRoutes from "./routes/presenceRoutes.js";
 import conversationRoutes from "./routes/conversationRoutes.js";
+import callRoutes from "./routes/callRoutes.js";
 
 const app = express();
 
@@ -77,12 +78,14 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/read-states", readStateRoutes);
 app.use("/api/presence", presenceRoutes);
 app.use("/api/conversations", conversationRoutes);
+app.use("/api/calls", callRoutes);
 app.use("/api/uploads", uploadRoutes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
 export default app;
+
 
 
 

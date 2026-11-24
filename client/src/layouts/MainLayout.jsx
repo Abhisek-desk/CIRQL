@@ -9,6 +9,8 @@ import ChannelSidebar from "../components/channels/ChannelSidebar";
 import ChatHeader from "../components/chat/ChatHeader";
 import ChatMessages from "../components/chat/ChatMessages";
 import DirectMessages from "../components/chat/DirectMessages";
+import CallOverlay from "../components/chat/CallOverlay";
+import CallHistoryModal from "../components/chat/CallHistoryModal";
 import MessageLoading from "../components/loaders/MessageLoading";
 import MessageSearch from "../components/chat/MessageSearch";
 import MessageComposer from "../components/chat/MessageComposer";
@@ -21,7 +23,7 @@ import notificationService from "../features/notifications/notificationService";
 import readStateService from "../features/messages/readStateService";
 import conversationService from "../features/messages/conversationService";
 
-import { connectSocket, disconnectSocket } from "../services/socket";
+import { connectSocket, disconnectSocket, getSocket } from "../services/socket";
 
 
 function playCirqlNotificationSound() {
@@ -88,6 +90,27 @@ export default function MainLayout() {
   // DIRECT MESSAGES
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
+  const [callSession, setCallSession] = useState(null);
+  const [callHistoryOpen, setCallHistoryOpen] = useState(false);
+  const handleStartCall = (mode) => {
+    if (!selectedConversation) return;
+    if (callSession) {
+      toast.error("A call is already active.");
+      return;
+    }
+    const recipient = selectedConversation.participants?.find(
+      (participant) => String(participant._id || participant) !== String(currentUserId),
+    );
+    const recipientName = typeof recipient === "object" ? recipient?.name : "CIRQL user";
+    setCallSession({
+      callId: crypto.randomUUID(),
+      conversationId: selectedConversation._id,
+      mode,
+      direction: "outgoing",
+      phase: "starting",
+      remoteName: recipientName,
+    });
+  };
 
 
   const [messages, setMessages] = useState([]);
@@ -2414,6 +2437,9 @@ export default function MainLayout() {
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatHeader
           onMenuClick={() => setMobileMenuOpen(true)}
+        onVoiceCall={() => handleStartCall("audio")}
+        onVideoCall={() => handleStartCall("video")}
+        onCallHistory={() => setCallHistoryOpen(true)}
           channel={selectedChannel}
           conversation={selectedConversation}
           currentUserId={currentUserId}
@@ -2632,6 +2658,25 @@ export default function MainLayout() {
         )}
       </main>
 
+      <CallHistoryModal
+
+        open={callHistoryOpen}
+
+        onClose={() => setCallHistoryOpen(false)}
+
+        conversationId={selectedConversation?._id}
+
+        currentUserId={currentUserId}
+
+      />
+
+
+      <CallOverlay
+        socket={getSocket()}
+        session={callSession}
+        onSessionChange={setCallSession}
+      />
+
       <CreateItemModal
         open={workspaceModalOpen}
         onClose={() => setWorkspaceModalOpen(false)}
@@ -2651,6 +2696,9 @@ export default function MainLayout() {
     </div>
   );
 }
+
+
+
 
 
 
