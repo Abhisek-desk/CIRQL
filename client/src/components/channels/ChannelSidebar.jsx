@@ -1,4 +1,4 @@
-﻿import { m as motion } from "motion/react";
+import { m as motion } from "motion/react";
 import {
   Hash,
   Plus,
@@ -202,6 +202,7 @@ export default function ChannelSidebar({
                     {participant?.avatar ? (
                       <img
                         src={participant.avatar}
+                        width={32} height={32}
                         alt=""
                         className="h-8 w-8 rounded-full object-cover"
                       />

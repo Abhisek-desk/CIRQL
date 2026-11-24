@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { useDispatch } from "react-redux";
 import { m as motion, AnimatePresence } from "motion/react";
 import {
@@ -127,6 +127,7 @@ export default function ProfileMenu({ user }) {
         {user?.avatar ? (
           <img
             src={user.avatar}
+            width={40} height={40}
             alt=""
             className="h-10 w-10 shrink-0 rounded-full object-cover"
           />

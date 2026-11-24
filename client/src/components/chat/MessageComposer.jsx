@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, m as motion } from "motion/react";
 import {
   Paperclip,
@@ -566,6 +566,7 @@ export default function MessageComposer({
                       {item.preview ? (
                         <img
                           src={item.preview}
+                          width={48} height={48}
                           alt={item.file.name}
                           className="h-12 w-12 shrink-0 rounded-lg object-cover"
                         />
@@ -670,6 +671,7 @@ export default function MessageComposer({
                         {member.avatar ? (
                           <img
                             src={member.avatar}
+                            width={36} height={36}
                             alt=""
                             className="h-9 w-9 rounded-full object-cover"
                           />

@@ -231,6 +231,7 @@ export default function NotificationBell({
                             {notification.sender?.avatar ? (
                               <img
                                 src={notification.sender.avatar}
+                              width={40} height={40}
                                 alt=""
                                 className="h-full w-full object-cover"
                               />

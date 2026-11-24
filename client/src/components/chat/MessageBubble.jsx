@@ -1,4 +1,4 @@
-﻿import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { AnimatePresence, m as motion } from "motion/react";
 import {
   Smile,
@@ -407,6 +407,7 @@ function MessageBubble({
               >
                 <img
                   src={file.url}
+                  width={640} height={360}
                   alt={file.name}
                   loading="eager"
                   className="max-h-72 w-full object-cover transition duration-300 hover:scale-[1.02]"
@@ -460,6 +461,7 @@ function MessageBubble({
       {avatar ? (
         <img
           src={avatar}
+          width={40} height={40}
           alt={name}
           className="h-10 w-10 shrink-0 rounded-full object-cover"
         />
@@ -622,6 +624,7 @@ function MessageBubble({
                         {reader.avatar ? (
                           <img
                             src={reader.avatar}
+                            width={32} height={32}
                             alt=""
                             className="h-8 w-8 rounded-full object-cover"
                           />

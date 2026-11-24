@@ -1,4 +1,4 @@
-﻿import { m as motion } from "motion/react";
+import { m as motion } from "motion/react";
 import { Users, Circle, MessageCircle } from "lucide-react";
 import PresenceIndicator from "./PresenceIndicator";
 
@@ -58,6 +58,7 @@ export default function WorkspaceMembers({
         {member.avatar ? (
           <img
             src={member.avatar}
+            width={36} height={36}
             alt=""
             className={`h-9 w-9 rounded-full object-cover ${
               online ? "" : "grayscale-[35%] opacity-80"
