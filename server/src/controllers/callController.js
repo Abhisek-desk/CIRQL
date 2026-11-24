@@ -1,4 +1,4 @@
-﻿import crypto from "crypto";
+import crypto from "crypto";
 import mongoose from "mongoose";
 import Call from "../models/Call.js";
 import Conversation from "../models/Conversation.js";
@@ -53,6 +53,44 @@ export const getCallHistory = async (req, res, next) => {
 
 export const getIceServers = async (req, res, next) => {
   try {
+    const meteredAppUrl = process.env.METERED_APP_URL?.replace(/\/+$/, "");
+    const meteredApiKey = process.env.METERED_API_KEY;
+
+    if (meteredAppUrl && meteredApiKey) {
+      const endpoint = new URL(
+        `${meteredAppUrl}/api/v1/turn/credentials`
+      );
+
+      endpoint.searchParams.set("apiKey", meteredApiKey);
+
+      const response = await fetch(endpoint, {
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        console.error("Metered TURN credential request failed:", response.status);
+        return res.status(502).json({
+          success: false,
+          message: "Unable to retrieve TURN credentials.",
+        });
+      }
+
+      const iceServers = await response.json();
+
+      if (!Array.isArray(iceServers) || iceServers.length === 0) {
+        return res.status(502).json({
+          success: false,
+          message: "Invalid TURN credentials response.",
+        });
+      }
+
+      return res.json({
+        success: true,
+        turnConfigured: true,
+        iceServers,
+      });
+    }
+
     const iceServers = [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
