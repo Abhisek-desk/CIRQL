@@ -108,6 +108,10 @@ export const getIceServers = async (req, res, next) => {
       return res.json({
         success: true,
         turnConfigured: false,
+        debugConfig: {
+          appUrlConfigured: Boolean(meteredAppUrl),
+          apiKeyConfigured: Boolean(meteredApiKey),
+        },
         iceServers,
       });
     }
