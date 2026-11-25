@@ -309,6 +309,6 @@ Latest local verification:
 
     ABHISEK MISHRA🤗
 
-- LinkedIn: https://www.linkedin.com/in/abhisek-mishra-31
+- LinkedIn: https://www.linkedin.com/in/abhisek-mishraaa
 
 - GitHub: https://github.com/Abhisek-desk
