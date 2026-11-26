@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+﻿import { memo, useEffect, useRef, useState } from "react";
 import { AnimatePresence, m as motion } from "motion/react";
 import {
   Smile,
@@ -31,9 +31,11 @@ const isImageAttachment = (file) =>
 const getOptimizedImageUrl = (url, width) => {
   if (!url || !url.includes("/image/upload/")) return url;
 
+  const optimizedWidth = Math.min(Math.max(Number(width) || 480, 1), 1200);
+
   return url.replace(
     "/image/upload/",
-    `/image/upload/f_auto,q_auto,w_${width}/`,
+    `/image/upload/f_auto,q_auto:eco,w_${optimizedWidth},c_limit/`,
   );
 };
 
@@ -425,13 +427,12 @@ function MessageBubble({
                   }}
                 >
                   <img
-                    src={getOptimizedImageUrl(file.url, 768)}
-                    srcSet={`${getOptimizedImageUrl(file.url, 384)} 384w, ${getOptimizedImageUrl(file.url, 768)} 768w, ${getOptimizedImageUrl(file.url, 1200)} 1200w`}
+                    src={getOptimizedImageUrl(file.url, 640)}
+                    srcSet={`${getOptimizedImageUrl(file.url, 320)} 320w, ${getOptimizedImageUrl(file.url, 480)} 480w, ${getOptimizedImageUrl(file.url, 640)} 640w`}
                     sizes="(max-width: 640px) 85vw, 560px"
-                    {...(file.width > 0 && file.height > 0
-                      ? { width: file.width, height: file.height }
-                      : {})}
-                    alt={file.name}
+                    width={file.width > 0 && file.height > 0 ? file.width : 4}
+                    height={file.width > 0 && file.height > 0 ? file.height : 3}
+                    alt={file.name || "Image attachment"}
                     loading={prioritizeImages && attachmentIndex === 0 ? "eager" : "lazy"}
                     fetchPriority={prioritizeImages && attachmentIndex === 0 ? "high" : "auto"}
                     decoding="async"
@@ -620,7 +621,7 @@ function MessageBubble({
               type="button"
               onClick={() => setReceiptOpen((value) => !value)}
               aria-expanded={receiptOpen}
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-[var(--link)] transition hover:bg-indigo-500/10"
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-indigo-700 dark:text-indigo-300 transition hover:bg-indigo-500/10"
             >
               <Eye size={13} />
               Seen by {seenBy.length}
@@ -871,6 +872,10 @@ function areMessageBubblePropsEqual(previous, next) {
 
   return (
     previous.message === next.message &&
+    previous.prioritizeImages === next.prioritizeImages &&
+    previous.workspaceId === next.workspaceId &&
+    previous.channelId === next.channelId &&
+    previous.conversationId === next.conversationId &&
     previous.isOwn === next.isOwn &&
     previous.currentUserId === next.currentUserId &&
     previous.members === next.members &&
@@ -884,3 +889,4 @@ function areMessageBubblePropsEqual(previous, next) {
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);
+
