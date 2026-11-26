@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, m as motion } from "motion/react";
@@ -2477,8 +2477,26 @@ export default function MainLayout() {
           }
         />
         {loadingWorkspaces || loadingChannels ? (
-          <div className="flex flex-1 items-center justify-center">
-            <div className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-500/20 border-t-indigo-500" />
+          <div
+            className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/10 text-2xl font-bold text-indigo-500">
+              #
+            </div>
+
+            <h2 className="text-xl font-bold text-[var(--text)]">
+              Welcome to CIRQL
+            </h2>
+
+            <p className="mt-2 max-w-sm text-sm leading-6 text-[var(--muted)]">
+              Getting your workspace and conversations ready...
+            </p>
+
+            <div className="mt-5 h-1 w-32 overflow-hidden rounded-full bg-[var(--surface-hover)]">
+              <div className="h-full w-1/2 rounded-full bg-indigo-500" />
+            </div>
           </div>
         ) : selectedConversation ? (
           <>
@@ -2693,3 +2711,4 @@ export default function MainLayout() {
     </div>
   );
 }
+
