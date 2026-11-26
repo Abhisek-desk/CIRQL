@@ -52,6 +52,7 @@ function MessageBubble({
   currentUserId,
   members = [],
   seenBy = [],
+  prioritizeImages = false,
 }) {
   const sender = message.sender || {};
   const name = sender.name || message.name || "User";
@@ -403,7 +404,7 @@ function MessageBubble({
 
     return (
       <div className={`mt-2 grid gap-2 ${attachments.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-        {attachments.map((file) => (
+        {attachments.map((file, attachmentIndex) => (
           <div key={file._id || file.publicId} className="min-w-0">
             {isImageAttachment(file) ? (
               <a
@@ -431,7 +432,9 @@ function MessageBubble({
                       ? { width: file.width, height: file.height }
                       : {})}
                     alt={file.name}
-                    loading="eager"
+                    loading={prioritizeImages && attachmentIndex === 0 ? "eager" : "lazy"}
+                    fetchPriority={prioritizeImages && attachmentIndex === 0 ? "high" : "auto"}
+                    decoding="async"
                     className="h-full w-full object-contain transition duration-300 hover:scale-[1.02]"
                   />
                 </div>
@@ -617,7 +620,7 @@ function MessageBubble({
               type="button"
               onClick={() => setReceiptOpen((value) => !value)}
               aria-expanded={receiptOpen}
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-indigo-500 transition hover:bg-indigo-500/10"
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-[var(--link)] transition hover:bg-indigo-500/10"
             >
               <Eye size={13} />
               Seen by {seenBy.length}
@@ -851,19 +854,6 @@ function MessageBubble({
     </motion.div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function areMessageBubblePropsEqual(previous, next) {
   const previousSeenBy = previous.seenBy || [];

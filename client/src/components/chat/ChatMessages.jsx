@@ -153,6 +153,11 @@ export default function ChatMessages({
   }, [highlightedId]);
 const channelName = channel?.name || "channel";
   const typingNames = typingUsers.map((item) => item.name);
+  const priorityMessageId = [...messages].reverse().find((message) =>
+    message.attachments?.some((file) =>
+      file.mimeType?.startsWith("image/") || file.resourceType === "image"
+    )
+  )?._id;
 
   return (
     <div ref={scrollContainerRef} className="custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto py-5">
@@ -262,6 +267,7 @@ const channelName = channel?.name || "channel";
                 workspaceId={workspaceId}
                 channelId={channelId}
                 seenBy={seenBy}
+                prioritizeImages={String(messageId) === String(priorityMessageId)}
                 isOwn={Boolean(isOwn)}
                 currentUserId={currentUserId}
                 members={members}
