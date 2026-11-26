@@ -100,9 +100,12 @@ export default function LoginPage() {
         />
 
         <div className="flex justify-end">
-          <span className="text-xs text-[var(--muted)]">
-            Forgot password? Coming soon
-          </span>
+          <Link
+            to="/forgot-password"
+            className="text-xs font-semibold text-indigo-500 transition hover:text-violet-500"
+          >
+            Forgot password?
+          </Link>
         </div>
 
         <AuthButton type="submit" loading={loading}>

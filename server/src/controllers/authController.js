@@ -1,4 +1,6 @@
 import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
+import { sendPasswordResetEmail } from "../services/emailService.js";
 import User from "../models/User.js";
 
 import {
@@ -249,4 +251,124 @@ export const getMe = async (req, res) => {
       role: req.user.role,
     },
   });
+};
+// FORGOT PASSWORD
+export const forgotPassword = async (req, res, next) => {
+  let user;
+  let resetTokenHash;
+
+  try {
+    const email = req.body.email.trim().toLowerCase();
+
+    user = await User.findOne({
+      email,
+      isActive: true,
+    }).select("+resetPasswordTokenHash +resetPasswordExpiresAt");
+
+    if (user) {
+      const resetToken = crypto.randomBytes(32).toString("hex");
+
+      resetTokenHash = crypto
+        .createHash("sha256")
+        .update(resetToken)
+        .digest("hex");
+
+      user.resetPasswordTokenHash = resetTokenHash;
+
+      user.resetPasswordExpiresAt = new Date(
+        Date.now() + 15 * 60 * 1000
+      );
+
+      await user.save();
+
+      const clientUrl = process.env.CLIENT_URL?.replace(/\/+$/, "");
+
+      if (!clientUrl) {
+        throw new Error("CLIENT_URL is not configured");
+      }
+
+      const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
+
+      await sendPasswordResetEmail({
+        email: user.email,
+        name: user.name,
+        resetUrl,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "If an account exists with that email, a password reset link has been sent.",
+    });
+  } catch (error) {
+    // Only clear the token created by this request.
+    // Never clear a newer token created by another request.
+    if (user && resetTokenHash) {
+      await User.updateOne(
+        {
+          _id: user._id,
+          resetPasswordTokenHash: resetTokenHash,
+        },
+        {
+          $set: {
+            resetPasswordTokenHash: null,
+            resetPasswordExpiresAt: null,
+          },
+        }
+      ).catch(() => {});
+    }
+
+    next(error);
+  }
+};
+
+// RESET PASSWORD
+export const resetPassword = async (req, res, next) => {
+  try {
+    const { token, password } = req.body;
+
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    // Atomic token consumption:
+    // only one request can match and consume this valid token.
+    const user = await User.findOneAndUpdate(
+      {
+        resetPasswordTokenHash: tokenHash,
+        resetPasswordExpiresAt: { $gt: new Date() },
+        isActive: true,
+      },
+      {
+        $set: {
+          passwordHash,
+          resetPasswordTokenHash: null,
+          resetPasswordExpiresAt: null,
+          refreshTokenHash: null,
+        },
+      },
+      {
+        new: false,
+      }
+    );
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "This password reset link is invalid or has expired.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Password reset successful. Please sign in with your new password.",
+    });
+  } catch (error) {
+    next(error);
+  }
 };

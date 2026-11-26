@@ -31,6 +31,8 @@ api.interceptors.response.use(
       "/auth/register",
       "/auth/refresh",
       "/auth/logout",
+      "/auth/forgot-password",
+      "/auth/reset-password",
     ];
 
     const isAuthRoute = excludedRoutes.some((route) =>

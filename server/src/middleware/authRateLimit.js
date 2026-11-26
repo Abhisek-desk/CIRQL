@@ -33,3 +33,14 @@ export const refreshLimiter = createAuthLimiter(
   30,
   "Too many refresh attempts. Please try again later."
 );
+export const forgotPasswordLimiter = createAuthLimiter(
+  15 * 60 * 1000,
+  5,
+  "Too many password reset requests. Please try again later."
+);
+
+export const resetPasswordLimiter = createAuthLimiter(
+  15 * 60 * 1000,
+  10,
+  "Too many password reset attempts. Please try again later."
+);
