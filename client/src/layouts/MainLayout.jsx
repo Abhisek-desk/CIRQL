@@ -965,14 +965,20 @@ export default function MainLayout() {
     socket.on("channel:read", handleChannelRead);
 
     const loadHistory = async () => {
+      // Load read receipts independently so they cannot delay message rendering.
+      readStateService
+        .getChannelReadReceipts(channelId)
+        .then((readStates) => {
+          if (active) setChannelReadStates(readStates);
+        })
+        .catch((error) => {
+          console.error("Could not load channel read receipts:", error);
+        });
+
       try {
-        const [history, readStates] = await Promise.all([
-          messageService.getMessages(channelId),
-          readStateService.getChannelReadReceipts(channelId),
-        ]);
+        const history = await messageService.getMessages(channelId);
 
         if (!active) return;
-        setChannelReadStates(readStates);
 
         setMessages((previous) => {
           const combined = [...history, ...previous];
@@ -1001,7 +1007,6 @@ export default function MainLayout() {
         if (active) setLoadingMessages(false);
       }
     };
-
     const joinChannel = () => {
       if (!active) return;
 
@@ -2711,4 +2716,5 @@ export default function MainLayout() {
     </div>
   );
 }
+
 
