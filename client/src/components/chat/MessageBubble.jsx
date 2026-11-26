@@ -621,7 +621,7 @@ function MessageBubble({
               type="button"
               onClick={() => setReceiptOpen((value) => !value)}
               aria-expanded={receiptOpen}
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-indigo-700 dark:text-indigo-300 transition hover:bg-indigo-500/10"
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium text-[var(--link)] transition hover:bg-indigo-500/10"
             >
               <Eye size={13} />
               Seen by {seenBy.length}
@@ -889,4 +889,5 @@ function areMessageBubblePropsEqual(previous, next) {
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);
+
 
