@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, m as motion } from "motion/react";
@@ -2580,11 +2580,7 @@ export default function MainLayout() {
           </div>
         ) : (
           <>
-            {loadingMessages ? (
-              <div className="flex-1 overflow-y-auto">
-                <MessageLoading />
-              </div>
-            ) : messageLoadError ? (
+            {messageLoadError ? (
               <div className="flex flex-1 items-center justify-center overflow-y-auto px-6 py-10">
                 <motion.div
                   initial={{ opacity: 0, y: 16, scale: 0.97 }}
@@ -2625,6 +2621,7 @@ export default function MainLayout() {
               </div>
             ) : (
               <ChatMessages
+                isLoading={loadingMessages}
                 messages={messages}
                 channelReadStates={channelReadStates}
                 channel={selectedChannel}
@@ -2696,11 +2693,3 @@ export default function MainLayout() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

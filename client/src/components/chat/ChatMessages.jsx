@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, m as motion } from "motion/react";
 
 import MessageBubble from "./MessageBubble";
@@ -20,6 +20,7 @@ export default function ChatMessages({
   onReplyMessage,
   onJumpToMessage,
   onReactMessage,
+  isLoading = false,
 }) {
   const scrollContainerRef = useRef(null);
   const lastMessageIdRef = useRef(null);
@@ -177,7 +178,26 @@ const channelName = channel?.name || "channel";
           </p>
         </div>
 
-        {messages.length === 0 && (
+        {isLoading && (
+          <div
+            className="space-y-7 px-5 py-8"
+            aria-label="Loading messages"
+            role="status"
+          >
+            {[1, 2, 3, 4].map((item) => (
+              <div key={item} className="flex gap-3">
+                <div className="h-10 w-10 shrink-0 rounded-full bg-[var(--surface-hover)]" />
+                <div className="flex flex-1 flex-col gap-3 pt-1">
+                  <div className="h-3 w-28 rounded-full bg-[var(--surface-hover)]" />
+                  <div className="h-3 w-3/4 rounded-full bg-[var(--surface-hover)]" />
+                  <div className="h-3 w-1/2 rounded-full bg-[var(--surface-hover)]" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!isLoading && messages.length === 0 && (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
