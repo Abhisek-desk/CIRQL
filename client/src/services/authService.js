@@ -32,7 +32,7 @@ const authService = {
   },
 
   logout: async () => {
-    const response = await api.post("/auth/logout");
+    const response = await api.post("/auth/");
     return response.data;
   },
 };

@@ -50,7 +50,7 @@ router.post(
   refresh
 );
 
-router.post("/logout", logout);
+router.post("/", logout);
 
 router.get("/me", authMiddleware, getMe);
 
