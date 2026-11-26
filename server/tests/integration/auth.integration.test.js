@@ -233,7 +233,7 @@ describe("Authentication Integration Tests", () => {
     const cookie = getCookie(login);
 
     const logout = await request(app)
-      .post("/api/auth/")
+      .post("/api/auth/logout")
       .set("Cookie", cookie);
 
     expect(logout.status).toBe(200);
